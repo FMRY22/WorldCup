@@ -21,7 +21,7 @@ import { calcPoints, calcUserScore, type Prediction, type ActualResult } from "@
 type UserPredictions = Record<string, Prediction>;
 type AllPredictions = Record<string, UserPredictions>;
 type AllResults = Record<string, ActualResult>;
-type View = "select" | "predictions" | "leaderboard" | "admin";
+type View = "select" | "predictions" | "leaderboard" | "compare" | "admin";
 
 // ─── Storage helpers ────────────────────────────────────────────────────────
 
@@ -284,6 +284,16 @@ export default function App() {
 
   if (view === "select") return <NameSelector onSelect={handleSelectName} />;
 
+  if (view === "compare")
+    return (
+      <CompareView
+        allPreds={allPreds}
+        results={results}
+        matches={matches}
+        onBack={() => setView("predictions")}
+      />
+    );
+
   if (view === "leaderboard")
     return (
       <LeaderboardView
@@ -327,6 +337,9 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+            <button onClick={() => setView("compare")} className="btn-outline text-xs px-3 py-2">
+              📊 مقارنة
+            </button>
             <button onClick={() => setView("leaderboard")} className="btn-outline text-xs px-3 py-2">
               🏆 النقاط
             </button>
@@ -687,6 +700,208 @@ function LeaderboardView({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── CompareView ─────────────────────────────────────────────────────────────
+
+function CompareView({
+  allPreds, results, matches, onBack,
+}: {
+  allPreds: AllPredictions;
+  results: AllResults;
+  matches: Match[];
+  onBack: () => void;
+}) {
+  const users = Object.keys(allPreds).sort();
+  const [stageFilter, setStageFilter] = useState<"all" | "group" | "knockout">("all");
+  const [onlyCompleted, setOnlyCompleted] = useState(false);
+
+  const scored = users
+    .map(u => ({ user: u, ...calcUserScore(allPreds[u] || {}, results) }))
+    .sort((a, b) => b.total - a.total);
+
+  const filtered = matches.filter(m => {
+    if (stageFilter === "group" && m.stage !== "group") return false;
+    if (stageFilter === "knockout" && m.stage === "group") return false;
+    if (onlyCompleted && !results[m.id]?.completed) return false;
+    return true;
+  });
+
+  // Group by section label
+  const sections: { label: string; matches: Match[] }[] = [];
+  const seenKeys: string[] = [];
+  const seenMap: Record<string, Match[]> = {};
+  for (const m of filtered) {
+    const key = m.stage === "group" ? (m.groupName || m.group || "أ") : STAGE_LABELS[m.stage];
+    if (!seenMap[key]) { seenMap[key] = []; seenKeys.push(key); }
+    seenMap[key].push(m);
+  }
+  for (const key of seenKeys) sections.push({ label: key, matches: seenMap[key] });
+
+  const medals = ["🥇", "🥈", "🥉"];
+
+  return (
+    <div className="min-h-screen pitch-lines">
+      {/* Header */}
+      <header className="sticky top-0 z-50 bg-pitch-dark/95 backdrop-blur border-b border-white/10">
+        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3">
+          <button onClick={onBack} className="text-white/60 hover:text-white text-xl transition">←</button>
+          <div className="flex-1">
+            <h1 className="font-black text-base text-yellow-400">📊 مقارنة التوقعات</h1>
+            <p className="text-xs text-white/40">{Object.values(results).filter(r => r.completed).length} مباراة مكتملة</p>
+          </div>
+        </div>
+
+        {/* Mini leaderboard strip */}
+        {scored.length > 0 && (
+          <div className="border-t border-white/5 bg-black/20">
+            <div className="max-w-5xl mx-auto px-4 py-2 flex gap-4 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+              {scored.map((s, i) => (
+                <div key={s.user} className="flex items-center gap-1.5 flex-shrink-0">
+                  <span className="text-sm">{medals[i] || `${i + 1}.`}</span>
+                  <span className="text-sm font-bold text-white/80">{s.user}</span>
+                  <span className="text-sm font-black text-yellow-400">{s.total}ن</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Filters */}
+        <div className="border-t border-white/5 bg-black/10">
+          <div className="max-w-5xl mx-auto px-4 py-2 flex items-center gap-2 flex-wrap">
+            {(["all", "group", "knockout"] as const).map(f => (
+              <button
+                key={f}
+                onClick={() => setStageFilter(f)}
+                className={`text-xs px-3 py-1 rounded-full border transition-all ${
+                  stageFilter === f
+                    ? "bg-yellow-500 border-yellow-500 text-black font-bold"
+                    : "border-white/20 text-white/50 hover:border-white/40"
+                }`}
+              >
+                {f === "all" ? "الكل" : f === "group" ? "دور المجموعات" : "الأدوار الإقصائية"}
+              </button>
+            ))}
+            <button
+              onClick={() => setOnlyCompleted(p => !p)}
+              className={`text-xs px-3 py-1 rounded-full border transition-all ${
+                onlyCompleted
+                  ? "bg-green-600 border-green-500 text-white font-bold"
+                  : "border-white/20 text-white/50 hover:border-white/40"
+              }`}
+            >
+              {onlyCompleted ? "✅ المكتملة فقط" : "المكتملة فقط"}
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {users.length === 0 ? (
+        <div className="flex flex-col items-center justify-center min-h-[60vh] text-white/40 gap-3">
+          <span className="text-5xl">📭</span>
+          <p>لا يوجد توقعات بعد</p>
+        </div>
+      ) : (
+        <main className="max-w-5xl mx-auto px-2 pb-24 pt-4 space-y-8">
+          {sections.map(({ label, matches: sMatches }) => (
+            <div key={label}>
+              {/* Section header */}
+              <div className="flex items-center gap-3 mb-3 px-2">
+                <div className="h-px flex-1 bg-white/10" />
+                <span className="text-yellow-400 font-bold text-sm">{label}</span>
+                <div className="h-px flex-1 bg-white/10" />
+              </div>
+
+              {/* Scrollable table */}
+              <div className="overflow-x-auto rounded-xl border border-white/10">
+                <table className="w-full text-xs border-collapse" style={{ minWidth: `${280 + users.length * 90}px` }}>
+                  <thead>
+                    <tr className="bg-white/5">
+                      <th className="sticky right-0 bg-pitch-dark/90 backdrop-blur px-3 py-2.5 text-right font-bold text-white/60 border-b border-white/10 min-w-[170px]">
+                        المباراة
+                      </th>
+                      {users.map(u => (
+                        <th key={u} className="px-2 py-2.5 text-center font-bold text-white/80 border-b border-white/10 min-w-[80px]">
+                          {u}
+                        </th>
+                      ))}
+                      <th className="px-2 py-2.5 text-center font-bold text-green-400 border-b border-white/10 min-w-[70px]">
+                        النتيجة
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sMatches.map((m, idx) => {
+                      const actual = results[m.id];
+                      return (
+                        <tr key={m.id} className={idx % 2 === 0 ? "bg-white/[0.02]" : ""}>
+                          {/* Match cell */}
+                          <td className="sticky right-0 bg-pitch-dark/90 backdrop-blur px-3 py-2.5 border-b border-white/5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-base">{m.flag1}</span>
+                              <span className="text-white/70 font-bold truncate max-w-[55px]">{m.team1}</span>
+                              <span className="text-white/30 text-[10px] mx-0.5">vs</span>
+                              <span className="text-white/70 font-bold truncate max-w-[55px]">{m.team2}</span>
+                              <span className="text-base">{m.flag2}</span>
+                            </div>
+                            <div className="text-[10px] text-white/30 mt-0.5">{fmt(m.date)}</div>
+                          </td>
+
+                          {/* Each user's prediction */}
+                          {users.map(u => {
+                            const p = allPreds[u]?.[m.id];
+                            const hasPred = p?.t1 !== "" && p?.t1 != null && p?.t2 !== "" && p?.t2 != null;
+                            const pts = actual?.completed && hasPred ? calcPoints(p, actual) : null;
+
+                            return (
+                              <td key={u} className="px-2 py-2.5 text-center border-b border-white/5">
+                                {hasPred ? (
+                                  <div className={`inline-flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg ${
+                                    pts?.kind === "exact"
+                                      ? "bg-yellow-500/25 text-yellow-300"
+                                      : pts?.kind === "result"
+                                      ? "bg-green-500/20 text-green-400"
+                                      : pts?.kind === "none"
+                                      ? "bg-red-500/15 text-red-400"
+                                      : "bg-white/5 text-white/70"
+                                  }`}>
+                                    <span className="font-black text-sm leading-none">{p.t1}:{p.t2}</span>
+                                    {pts && (
+                                      <span className="text-[10px] leading-none opacity-80">
+                                        {pts.kind === "exact" ? "⭐+3" : pts.kind === "result" ? "✓+1" : "✗0"}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-white/20">—</span>
+                                )}
+                              </td>
+                            );
+                          })}
+
+                          {/* Actual result */}
+                          <td className="px-2 py-2.5 text-center border-b border-white/5">
+                            {actual?.completed ? (
+                              <span className="font-black text-green-400 text-sm">{actual.t1}:{actual.t2}</span>
+                            ) : actual?.live ? (
+                              <span className="font-black text-red-400 text-sm animate-pulse">{actual.t1}:{actual.t2} 🔴</span>
+                            ) : (
+                              <span className="text-white/20 text-sm">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+        </main>
+      )}
     </div>
   );
 }
