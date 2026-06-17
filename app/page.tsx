@@ -6,6 +6,14 @@ import {
 } from "firebase/firestore";
 import { db, isFirebaseConfigured, ROOM_ID } from "@/lib/firebase";
 import { ALL_MATCHES, STAGE_LABELS, type Match } from "@/lib/matches";
+
+// Extended match type returned from /api/schedule
+interface ScheduleMatch extends Match {
+  status?: string;
+  score?: { home: number; away: number } | null;
+  live?: boolean;
+  completed?: boolean;
+}
 import { PARTICIPANTS } from "@/lib/config";
 import { matchesArabicName } from "@/lib/teamMap";
 import { calcPoints, calcUserScore, type Prediction, type ActualResult } from "@/lib/scoring";
@@ -128,12 +136,44 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
   const [espnStatus, setEspnStatus] = useState<"idle" | "loading" | "ok" | "err">("idle");
+  const [matches, setMatches] = useState<Match[]>(ALL_MATCHES);
+  const [scheduleStatus, setScheduleStatus] = useState<"loading" | "ok" | "fallback">("loading");
   const [adminKey] = useState(() =>
     typeof window !== "undefined"
       ? new URLSearchParams(window.location.search).get("admin") || ""
       : ""
   );
   const fetchRef = useRef(false);
+
+  // Fetch live schedule from API
+  useEffect(() => {
+    fetch("/api/schedule")
+      .then(r => r.json())
+      .then((data: ScheduleMatch[]) => {
+        if (!Array.isArray(data) || data.length === 0) {
+          setScheduleStatus("fallback");
+          return;
+        }
+        setMatches(data);
+        setScheduleStatus("ok");
+        // Extract completed/live results from schedule
+        const extracted: AllResults = {};
+        for (const m of data) {
+          if ((m.completed || m.live) && m.score != null) {
+            extracted[m.id] = {
+              t1: m.score.home,
+              t2: m.score.away,
+              completed: m.completed ?? false,
+              live: m.live ?? false,
+            };
+          }
+        }
+        if (Object.keys(extracted).length > 0) {
+          setResults(prev => ({ ...prev, ...extracted }));
+        }
+      })
+      .catch(() => setScheduleStatus("fallback"));
+  }, []);
 
   // Init from localStorage
   useEffect(() => {
@@ -202,7 +242,7 @@ export default function App() {
   };
 
   const handleScore = (matchId: string, team: "t1" | "t2", val: string) => {
-    if (isMatchLocked(ALL_MATCHES.find(m => m.id === matchId)!, results)) return;
+    if (isMatchLocked(matches.find(m => m.id === matchId)!, results)) return;
     const num = val === "" ? "" : Math.max(0, Math.min(30, parseInt(val) || 0));
     setMyPreds(prev => ({ ...prev, [matchId]: { ...prev[matchId], [team]: num } }));
   };
@@ -239,7 +279,7 @@ export default function App() {
     }
   };
 
-  const sections = getSections(ALL_MATCHES);
+  const sections = getSections(matches);
   const completedCount = Object.values(results).filter(r => r.completed).length;
 
   if (view === "select") return <NameSelector onSelect={handleSelectName} />;
@@ -251,6 +291,7 @@ export default function App() {
         results={results}
         currentUser={user}
         onBack={() => setView("predictions")}
+        matches={matches}
       />
     );
 
@@ -260,6 +301,7 @@ export default function App() {
         results={results}
         onSave={handleAdminSaveResults}
         onBack={() => setView("predictions")}
+        matches={matches}
       />
     );
 
@@ -274,8 +316,10 @@ export default function App() {
               <h1 className="font-black text-base text-yellow-400 leading-none">كأس العالم 2026</h1>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-xs text-white/40">{completedCount} مباراة مكتملة</span>
-                {espnStatus === "loading" && <span className="text-xs text-blue-400 animate-pulse">🔄 تحديث...</span>}
-                {espnStatus === "ok" && <span className="text-xs text-green-400">🟢 محدّث</span>}
+                {scheduleStatus === "loading" && <span className="text-xs text-blue-400 animate-pulse">⏳ تحميل الجدول...</span>}
+                {scheduleStatus === "ok" && espnStatus === "ok" && <span className="text-xs text-green-400">🟢 بيانات حية</span>}
+                {scheduleStatus === "fallback" && <span className="text-xs text-orange-400">📋 بيانات محلية</span>}
+                {scheduleStatus === "ok" && espnStatus === "loading" && <span className="text-xs text-blue-400 animate-pulse">🔄 تحديث النتائج...</span>}
                 {espnStatus === "err" && (
                   <button onClick={fetchEspn} className="text-xs text-orange-400 underline">⚠️ إعادة</button>
                 )}
@@ -485,12 +529,13 @@ function MatchCard({
 // ─── Leaderboard ──────────────────────────────────────────────────────────────
 
 function LeaderboardView({
-  allPreds, results, currentUser, onBack,
+  allPreds, results, currentUser, onBack, matches,
 }: {
   allPreds: AllPredictions;
   results: AllResults;
   currentUser: string;
   onBack: () => void;
+  matches: Match[];
 }) {
   const [selected, setSelected] = useState(currentUser);
 
@@ -499,7 +544,7 @@ function LeaderboardView({
     .map(u => ({ user: u, ...calcUserScore(allPreds[u] || {}, results) }))
     .sort((a, b) => b.total - a.total || b.exact - a.exact);
 
-  const sections = getSections(ALL_MATCHES);
+  const sections = getSections(matches);
   const selectedPreds = allPreds[selected] || {};
 
   return (
@@ -649,11 +694,12 @@ function LeaderboardView({
 // ─── AdminView ────────────────────────────────────────────────────────────────
 
 function AdminView({
-  results, onSave, onBack,
+  results, onSave, onBack, matches,
 }: {
   results: AllResults;
   onSave: (r: AllResults) => Promise<void>;
   onBack: () => void;
+  matches: Match[];
 }) {
   const [localResults, setLocalResults] = useState<AllResults>({ ...results });
   const [saving, setSaving] = useState(false);
@@ -679,7 +725,7 @@ function AdminView({
     setSaving(false);
   };
 
-  const groupMatches = ALL_MATCHES.filter(m => m.stage === "group");
+  const groupMatches = matches.filter(m => m.stage === "group");
 
   return (
     <div className="min-h-screen pitch-lines">
