@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    font-family: "Cairo", "Noto Sans Arabic", sans-serif;
+  }
+
+  body {
+    background: linear-gradient(135deg, #0a1f0a 0%, #0f2d1a 50%, #0a1f0a 100%);
+    min-height: 100vh;
+  }
+}
+
+@layer components {
+  .pitch-lines {
+    background-image:
+      repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 39px,
+        rgba(255, 255, 255, 0.03) 39px,
+        rgba(255, 255, 255, 0.03) 40px
+      ),
+      repeating-linear-gradient(
+        90deg,
+        transparent,
+        transparent 39px,
+        rgba(255, 255, 255, 0.03) 39px,
+        rgba(255, 255, 255, 0.03) 40px
+      );
+  }
+
+  .score-input {
+    @apply w-14 h-12 text-center text-2xl font-bold bg-white/10 border-2 border-white/20
+           rounded-xl text-white focus:outline-none focus:border-yellow-400
+           focus:bg-white/20 transition-all duration-200;
+  }
+
+  .card-glass {
+    @apply bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl;
+  }
+
+  .btn-gold {
+    @apply bg-gradient-to-r from-yellow-500 to-yellow-400 text-black font-bold
+           px-6 py-3 rounded-xl hover:from-yellow-400 hover:to-yellow-300
+           transition-all duration-200 shadow-lg shadow-yellow-500/20
+           active:scale-95 cursor-pointer;
+  }
+
+  .btn-outline {
+    @apply border-2 border-white/30 text-white font-bold px-6 py-3 rounded-xl
+           hover:border-white/60 hover:bg-white/5 transition-all duration-200
+           active:scale-95 cursor-pointer;
+  }
+
+  .group-badge {
+    @apply inline-flex items-center justify-center w-8 h-8 rounded-full
+           bg-yellow-500 text-black text-sm font-bold;
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(255,255,255,0.05);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.2);
+  border-radius: 3px;
+}
+
+/* Number input arrows hide */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* Smooth transitions */
+.fade-in {
+  animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.pulse-gold {
+  animation: pulseGold 2s infinite;
+}
+
+@keyframes pulseGold {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.4); }
+  50% { box-shadow: 0 0 0 12px rgba(234, 179, 8, 0); }
+}
