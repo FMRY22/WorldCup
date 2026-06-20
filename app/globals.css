@@ -94,3 +94,29 @@ input[type="number"] { -moz-appearance: textfield; }
   50%      { box-shadow: 0 0 0 8px rgba(239,68,68,0); }
 }
 .live-glow { animation: liveGlow 2s infinite; }
+
+/* Live ticker */
+@keyframes ticker-scroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.ticker-track {
+  display: flex;
+  white-space: nowrap;
+  animation: ticker-scroll 28s linear infinite;
+}
+.ticker-track:hover { animation-play-state: paused; }
+
+/* Confetti drop */
+@keyframes confetti-drop {
+  0%   { transform: translateY(-8vh) rotate(0deg) scale(1);    opacity: 1; }
+  85%  { opacity: 1; }
+  100% { transform: translateY(108vh) rotate(600deg) scale(0.4); opacity: 0; }
+}
+
+/* Champion pulse */
+@keyframes champion-pulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(234,179,8,0.4); }
+  50%      { box-shadow: 0 0 0 6px rgba(234,179,8,0); }
+}
+.champion-glow { animation: champion-pulse 2s infinite; }
