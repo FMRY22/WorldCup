@@ -94,6 +94,27 @@ function fireConfetti() {
   }
 }
 
+// ── LiveClock ─────────────────────────────────────────────────────────────────
+function LiveClock({ minute, fetchedAt }: { minute: number; fetchedAt: Date }) {
+  const elapsed = () => Math.max(0, Math.floor((Date.now() - fetchedAt.getTime()) / 1000));
+  const [secs, setSecs] = useState(elapsed);
+
+  useEffect(() => {
+    setSecs(elapsed());
+    const id = setInterval(() => setSecs(elapsed()), 1000);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchedAt]);
+
+  const m = minute + Math.floor(secs / 60);
+  const s = secs % 60;
+  return (
+    <span className="text-[11px] font-black text-red-300 bg-red-500/10 border border-red-500/20 rounded-full px-2.5 py-0.5" dir="ltr">
+      ⏱ {m}:{String(s).padStart(2, "0")}′
+    </span>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 export default function HomeClient() {
   const [matches,  setMatches]  = useState<ScheduleMatch[]>(() => {
@@ -381,7 +402,7 @@ export default function HomeClient() {
             <div className="section-title"><span>{sec.label}</span></div>
             <div className="space-y-3">
               {sec.matches.map(m => (
-                <MatchCard key={predKey(m)} match={m} actual={results[predKey(m)]} allPreds={allPreds} users={users} />
+                <MatchCard key={predKey(m)} match={m} actual={results[predKey(m)]} allPreds={allPreds} users={users} fetchedAt={updated} />
               ))}
             </div>
           </div>
@@ -402,8 +423,8 @@ export default function HomeClient() {
 }
 
 // ── MatchCard ─────────────────────────────────────────────────────────────────
-function MatchCard({ match, actual, allPreds, users }: {
-  match: ScheduleMatch; actual?: ActualResult; allPreds: AllPredictions; users: string[];
+function MatchCard({ match, actual, allPreds, users, fetchedAt }: {
+  match: ScheduleMatch; actual?: ActualResult; allPreds: AllPredictions; users: string[]; fetchedAt?: Date | null;
 }) {
   const pk = predKey(match);
   const predsForMatch = users
@@ -428,9 +449,9 @@ function MatchCard({ match, actual, allPreds, users }: {
           </div>
           <div className="flex items-center gap-1.5 flex-wrap justify-end">
             {isLive && match.minute != null && (
-              <span className="text-[11px] font-black text-red-300 bg-red-500/10 border border-red-500/20 rounded-full px-2.5 py-0.5 animate-pulse">
-                ⏱ {match.minute}&apos;
-              </span>
+              fetchedAt
+                ? <LiveClock minute={match.minute} fetchedAt={fetchedAt} />
+                : <span className="text-[11px] font-black text-red-300 bg-red-500/10 border border-red-500/20 rounded-full px-2.5 py-0.5 animate-pulse">⏱ {match.minute}&apos;</span>
             )}
             {isLive ? (
               <span className="badge-live animate-pulse">🔴 مباشر</span>
