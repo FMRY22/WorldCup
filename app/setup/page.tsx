@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { isFirebaseConfigured } from "@/lib/firebase";
+import { doc, setDoc, getDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+import { db, isFirebaseConfigured, ROOM_ID } from "@/lib/firebase";
 
 const STEPS = [
   {
@@ -41,6 +43,70 @@ const STEPS = [
   },
 ];
 
+// ── اختبار اتصال Firestore فعلياً (كتابة ← قراءة ← حذف) ──────────────────────────
+function FirebaseTest() {
+  const [state, setState] = useState<"idle"|"testing"|"ok"|"fail">("idle");
+  const [msg, setMsg]     = useState("");
+
+  const run = async () => {
+    setState("testing");
+    setMsg("");
+    if (!isFirebaseConfigured || !db) {
+      setState("fail");
+      setMsg("الإعدادات غير موجودة في هذا النشر — تأكد من إضافة المتغيرات في Vercel ثم أعد النشر.");
+      return;
+    }
+    try {
+      const ref = doc(db, "rooms", "__diagnostic__");
+      await setDoc(ref, { ts: serverTimestamp(), room: ROOM_ID });
+      const snap = await getDoc(ref);
+      if (!snap.exists()) throw new Error("تمت الكتابة لكن فشلت القراءة");
+      await deleteDoc(ref).catch(() => {}); // تنظيف (غير حرج)
+      setState("ok");
+      setMsg("الاتصال يعمل — التوقعات تُحفظ وتُقرأ من Firestore بنجاح.");
+    } catch (e) {
+      setState("fail");
+      const raw = e instanceof Error ? e.message : String(e);
+      // رسالة مفهومة لأشهر سبب: قواعد الأمان
+      if (/permission|insufficient|PERMISSION/i.test(raw)) {
+        setMsg("الاتصال تم لكن قواعد Firestore تمنع الكتابة. حدّث Rules كما في الأسفل (انتهت صلاحية وضع الاختبار غالباً).");
+      } else if (/not been used|disabled|NOT_FOUND|database/i.test(raw)) {
+        setMsg("لم يتم إنشاء قاعدة Firestore بعد، أو لم تُفعّل. أنشئها من Firebase Console (الخطوة ٢).");
+      } else {
+        setMsg(`فشل الاختبار: ${raw}`);
+      }
+    }
+  };
+
+  return (
+    <div className="card p-4 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="font-black text-white text-sm">🔌 اختبار الاتصال</p>
+          <p className="text-[11px] text-white/40 mt-0.5">يتحقق فعلياً من القراءة والكتابة في Firestore</p>
+        </div>
+        <button
+          onClick={run}
+          disabled={state === "testing"}
+          className="btn-primary text-sm whitespace-nowrap disabled:opacity-50"
+        >
+          {state === "testing" ? "...جارٍ الفحص" : "ابدأ الاختبار"}
+        </button>
+      </div>
+      {state === "ok" && (
+        <div className="bg-green-500/15 border border-green-500/30 rounded-xl px-3 py-2 text-xs text-green-300">
+          ✅ {msg}
+        </div>
+      )}
+      {state === "fail" && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2 text-xs text-red-300 leading-relaxed">
+          ❌ {msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SetupPage() {
   const configured = isFirebaseConfigured;
 
@@ -73,6 +139,9 @@ export default function SetupPage() {
             </div>
           </div>
         )}
+
+        {/* Connection test */}
+        <FirebaseTest />
 
         {/* Why Firebase */}
         <div className="card p-5">
