@@ -350,8 +350,8 @@ async function fetchESPN() {
     const groupNote = comp?.notes?.find((n) =>
       n.headline?.toLowerCase().includes("group")
     );
-    const groupLetter =
-      groupNote?.headline?.replace(/group\s*/i, "").trim() ?? "";
+    const groupLetterMatch = groupNote?.headline?.match(/group\s+([A-L])/i);
+    const groupLetter = groupLetterMatch?.[1]?.toUpperCase() ?? "";
 
     const homeEn = home?.team?.displayName ?? "";
     const awayEn = away?.team?.displayName ?? "";
@@ -418,14 +418,14 @@ export async function GET() {
 
   try {
     const matches = APISPORTS_KEY
-      ? await fetchApiSports()
+      ? await fetchApiSports().catch((err) => { console.error(`[DIAG] api-sports failed: ${err} → ESPN`); return fetchESPN(); })
       : FDORG_KEY
-      ? await fetchFDOrg()
+      ? await fetchFDOrg().catch((err) => { console.error(`[DIAG] fdorg failed: ${err} → ESPN`); return fetchESPN(); })
       : await fetchESPN();
     cache = { data: matches, ts: Date.now() };
     return NextResponse.json(matches);
   } catch (err) {
-    console.error(`[DIAG] fetch failed: ${err}`);
+    console.error(`[DIAG] all sources failed: ${err}`);
     if (cache) return NextResponse.json(cache.data);
     return NextResponse.json([], { status: 200 });
   }
