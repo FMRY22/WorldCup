@@ -1,5 +1,5 @@
 import { initializeApp, getApps } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { initializeFirestore, persistentLocalCache, getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -17,7 +17,13 @@ let db: ReturnType<typeof getFirestore> | null = null;
 
 if (isFirebaseConfigured) {
   const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-  db = getFirestore(app);
+  // persistentLocalCache: يخزن بيانات Firestore في IndexedDB
+  // onSnapshot يرجع الكاش فوراً قبل ما يتصل بالسيرفر
+  try {
+    db = initializeFirestore(app, { localCache: persistentLocalCache() });
+  } catch {
+    db = getFirestore(app);
+  }
 }
 
 export { db };

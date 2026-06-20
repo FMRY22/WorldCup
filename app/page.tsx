@@ -111,19 +111,27 @@ export default function HomePage() {
 
   // ── Firebase or localStorage ───────────────────────
   useEffect(() => {
+    // اقرأ الكاش فوراً (متزامن) قبل أي طلب شبكة
+    try {
+      const c = localStorage.getItem("wc2026_allpreds");
+      if (c) setAllPreds(JSON.parse(c));
+    } catch {}
+
     if (!isFirebaseConfigured || !db) {
       try { setAllPreds(JSON.parse(localStorage.getItem("wc2026_preds") || "{}")); } catch {}
       return;
     }
     return onSnapshot(doc(db, "rooms", ROOM_ID), snap => {
       if (!snap.exists()) {
-        // Firebase فارغ — اقرأ من الجهاز مؤقتاً
         try { setAllPreds(JSON.parse(localStorage.getItem("wc2026_preds") || "{}")); } catch {}
         return;
       }
       const d = snap.data();
-      if (d.predictions) setAllPreds(d.predictions);
-      if (d.results)     setResults(p => ({ ...p, ...d.results }));
+      if (d.predictions) {
+        setAllPreds(d.predictions);
+        try { localStorage.setItem("wc2026_allpreds", JSON.stringify(d.predictions)); } catch {}
+      }
+      if (d.results) setResults(p => ({ ...p, ...d.results }));
     });
   }, []);
 
