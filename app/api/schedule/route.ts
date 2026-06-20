@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { EN_TO_AR } from "@/lib/teamMap";
 import { getFlag } from "@/lib/flags";
 
+export const dynamic = "force-dynamic";
+
 const APISPORTS_KEY = process.env.APISPORTS_KEY;
 const APISPORTS_URL = "https://v3.football.api-sports.io/fixtures?league=1&season=2026";
 

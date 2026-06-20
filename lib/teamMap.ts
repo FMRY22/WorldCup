@@ -61,6 +61,22 @@ export const AR_TO_EN: Record<string, string[]> = {
   "السويد": ["Sweden"],
   "هايتي": ["Haiti"],
   "كوراساو": ["Curaçao", "Curacao"],
+  // فرق كأس العالم 2026 الإضافية
+  "بوليفيا": ["Bolivia"],
+  "كينيا": ["Kenya"],
+  "غواتيمالا": ["Guatemala"],
+  "كوبا": ["Cuba"],
+  "السلفادور": ["El Salvador"],
+  "سورينام": ["Suriname"],
+  "شيلي": ["Chile"],
+  "بيرو": ["Peru"],
+  "هندوراس": ["Honduras"],
+  "المجر": ["Hungary"],
+  "اليونان": ["Greece"],
+  "أوكرانيا": ["Ukraine"],
+  "ويلز": ["Wales"],
+  "مالي": ["Mali"],
+  "غينيا": ["Guinea"],
 };
 
 // Build reverse map: English → Arabic
