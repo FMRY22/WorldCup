@@ -77,19 +77,13 @@ export default function HomePage() {
       if (!Array.isArray(data) || data.length === 0) { setStatus("fallback"); return; }
       setStatus("ok");
       setUpdated(new Date());
-      // نستخدم الـ API للنتائج فقط — نطابق بأسماء الفرق لتجنب اختلاف الـ IDs
+      setMatches(data);
       const extracted: AllResults = {};
       for (const api of data) {
         if (!(api.completed || api.live) || api.score == null) continue;
-        const match = ALL_MATCHES.find(m =>
-          (m.team1 === api.team1 && m.team2 === api.team2) ||
-          (m.team1 === api.team2 && m.team2 === api.team1)
-        );
-        if (!match) continue;
-        const swapped = match.team1 === api.team2;
-        extracted[match.id] = {
-          t1: swapped ? api.score.away : api.score.home,
-          t2: swapped ? api.score.home : api.score.away,
+        extracted[predKey(api)] = {
+          t1: api.score.home,
+          t2: api.score.away,
           completed: api.completed ?? false,
           live: api.live ?? false,
         };
@@ -136,10 +130,10 @@ export default function HomePage() {
   const MEDALS     = ["🥇", "🥈", "🥉"];
 
   const visible = matches.filter(m => {
-    if (filter === "live")     return results[m.id]?.live;
-    if (filter === "done")     return results[m.id]?.completed;
+    if (filter === "live")     return results[predKey(m)]?.live;
+    if (filter === "done")     return results[predKey(m)]?.completed;
     if (filter === "today")    return m.date === today;
-    if (filter === "upcoming") return !results[m.id]?.completed && !results[m.id]?.live;
+    if (filter === "upcoming") return !results[predKey(m)]?.completed && !results[predKey(m)]?.live;
     return true;
   });
 
@@ -262,7 +256,7 @@ export default function HomePage() {
             <div className="section-title"><span>{sec.label}</span></div>
             <div className="space-y-3">
               {sec.matches.map(m => (
-                <MatchCard key={m.id} match={m} actual={results[m.id]} allPreds={allPreds} users={users} />
+                <MatchCard key={predKey(m)} match={m} actual={results[predKey(m)]} allPreds={allPreds} users={users} />
               ))}
             </div>
           </div>
