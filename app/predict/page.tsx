@@ -186,8 +186,12 @@ export default function PredictPage() {
           </div>
 
           {!isFirebaseConfigured && (
-            <div className="mt-4 bg-orange-500/10 border border-orange-500/25 rounded-xl p-3 text-xs text-orange-300 text-center">
-              ⚠️ وضع تجريبي — التوقعات محفوظة محلياً فقط
+            <div className="mt-4 bg-orange-500/10 border border-orange-500/25 rounded-xl p-3 text-xs text-orange-300 text-center space-y-2">
+              <p>⚠️ وضع تجريبي — التوقعات محفوظة محلياً فقط</p>
+              <p className="text-orange-300/60">لمشاركة التوقعات مع الآخرين، أعدّ Firebase أولاً</p>
+              <Link href="/setup" className="inline-block bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/40 text-orange-300 rounded-lg px-3 py-1.5 transition-all">
+                📋 دليل الإعداد ←
+              </Link>
             </div>
           )}
         </div>
