@@ -56,22 +56,7 @@ export default function PredictPage() {
   const [saving,     setSaving]     = useState(false);
   const [saved,      setSaved]      = useState(false);
   const [predFilter, setPredFilter] = useState<"upcoming"|"done"|"all">("upcoming");
-  const fetchRef  = useRef(false);
-  const syncedRef = useRef(false);
-
-  // مزامنة تلقائية: إذا عند المستخدم توقعات محفوظة محلياً، ارفعها لـ Firebase
-  useEffect(() => {
-    if (!isFirebaseConfigured || !db || syncedRef.current) return;
-    syncedRef.current = true;
-    const all = (() => { try { return JSON.parse(localStorage.getItem("wc2026_preds") || "{}"); } catch { return {}; } })();
-    if (Object.keys(all).length === 0) return;
-    const ref = doc(db, "rooms", ROOM_ID);
-    getDoc(ref).then(snap => {
-      const existing = snap.exists() ? (snap.data().predictions || {}) : {};
-      const merged = { ...all, ...existing };
-      return setDoc(ref, { predictions: merged }, { merge: true });
-    }).catch(console.error);
-  }, []);
+  const fetchRef = useRef(false);
 
   const loadSchedule = useCallback(async () => {
     if (fetchRef.current) return;
@@ -80,12 +65,22 @@ export default function PredictPage() {
       const r = await fetch("/api/schedule");
       const data: ScheduleMatch[] = await r.json();
       if (!Array.isArray(data) || !data.length) return;
-      setMatches(data);
+      // نستخدم الـ API للنتائج فقط — نطابق بأسماء الفرق لتجنب اختلاف الـ IDs
       const extracted: AllResults = {};
-      for (const m of data) {
-        if ((m.completed || m.live) && m.score != null)
-          extracted[m.id] = { t1: m.score.home, t2: m.score.away,
-            completed: m.completed ?? false, live: m.live ?? false };
+      for (const api of data) {
+        if (!(api.completed || api.live) || api.score == null) continue;
+        const match = ALL_MATCHES.find(m =>
+          (m.team1 === api.team1 && m.team2 === api.team2) ||
+          (m.team1 === api.team2 && m.team2 === api.team1)
+        );
+        if (!match) continue;
+        const swapped = match.team1 === api.team2;
+        extracted[match.id] = {
+          t1: swapped ? api.score.away : api.score.home,
+          t2: swapped ? api.score.home : api.score.away,
+          completed: api.completed ?? false,
+          live: api.live ?? false,
+        };
       }
       if (Object.keys(extracted).length) setResults(p => ({ ...p, ...extracted }));
     } finally {

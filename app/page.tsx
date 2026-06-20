@@ -73,15 +73,24 @@ export default function HomePage() {
       const r = await fetch("/api/schedule");
       const data: ScheduleMatch[] = await r.json();
       if (!Array.isArray(data) || data.length === 0) { setStatus("fallback"); return; }
-      setMatches(data);
       setStatus("ok");
       setUpdated(new Date());
+      // نستخدم الـ API للنتائج فقط — نطابق بأسماء الفرق لتجنب اختلاف الـ IDs
       const extracted: AllResults = {};
-      for (const m of data) {
-        if ((m.completed || m.live) && m.score != null) {
-          extracted[m.id] = { t1: m.score.home, t2: m.score.away,
-            completed: m.completed ?? false, live: m.live ?? false };
-        }
+      for (const api of data) {
+        if (!(api.completed || api.live) || api.score == null) continue;
+        const match = ALL_MATCHES.find(m =>
+          (m.team1 === api.team1 && m.team2 === api.team2) ||
+          (m.team1 === api.team2 && m.team2 === api.team1)
+        );
+        if (!match) continue;
+        const swapped = match.team1 === api.team2;
+        extracted[match.id] = {
+          t1: swapped ? api.score.away : api.score.home,
+          t2: swapped ? api.score.home : api.score.away,
+          completed: api.completed ?? false,
+          live: api.live ?? false,
+        };
       }
       if (Object.keys(extracted).length) setResults(p => ({ ...p, ...extracted }));
     } catch {
