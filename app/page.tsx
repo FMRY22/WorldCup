@@ -1,997 +1,342 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import {
-  doc, getDoc, setDoc, onSnapshot, serverTimestamp,
-} from "firebase/firestore";
+import { useState, useEffect, useCallback } from "react";
+import { doc, onSnapshot } from "firebase/firestore";
+import Link from "next/link";
 import { db, isFirebaseConfigured, ROOM_ID } from "@/lib/firebase";
 import { ALL_MATCHES, STAGE_LABELS, type Match } from "@/lib/matches";
+import { calcPoints, calcUserScore, type Prediction, type ActualResult } from "@/lib/scoring";
 
-// Extended match type returned from /api/schedule
+type AllPredictions = Record<string, Record<string, Prediction>>;
+type AllResults    = Record<string, ActualResult>;
+
 interface ScheduleMatch extends Match {
-  status?: string;
   score?: { home: number; away: number } | null;
   live?: boolean;
   completed?: boolean;
 }
-import { PARTICIPANTS } from "@/lib/config";
-import { matchesArabicName } from "@/lib/teamMap";
-import { calcPoints, calcUserScore, type Prediction, type ActualResult } from "@/lib/scoring";
 
-type UserPredictions = Record<string, Prediction>;
-type AllPredictions = Record<string, UserPredictions>;
-type AllResults = Record<string, ActualResult>;
-type View = "select" | "predictions" | "leaderboard" | "compare" | "admin";
+// ── helpers ──────────────────────────────────────────────────────────────────
 
-// ─── Storage helpers ────────────────────────────────────────────────────────
-
-const LOCAL_PREDS_KEY = "wc2026_preds";
-const LOCAL_USER_KEY = "wc2026_user";
-
-const loadLocalAll = (): AllPredictions => {
-  try { return JSON.parse(localStorage.getItem(LOCAL_PREDS_KEY) || "{}"); } catch { return {}; }
-};
-const saveLocalAll = (all: AllPredictions) =>
-  localStorage.setItem(LOCAL_PREDS_KEY, JSON.stringify(all));
-
-// ─── ESPN result parser ──────────────────────────────────────────────────────
-
-interface EspnEvent {
-  id: string;
-  date: string;
-  status: { type: { completed: boolean; state: string; description: string } };
-  competitions: Array<{
-    competitors: Array<{
-      homeAway: "home" | "away";
-      team: { displayName: string; shortDisplayName: string };
-      score: string;
-    }>;
-  }>;
-}
-
-function parseEspnEvents(events: EspnEvent[]): AllResults {
-  const results: AllResults = {};
-
-  for (const event of events) {
-    const comp = event.competitions?.[0];
-    if (!comp) continue;
-    const home = comp.competitors.find(c => c.homeAway === "home");
-    const away = comp.competitors.find(c => c.homeAway === "away");
-    if (!home || !away) continue;
-
-    const homeScore = parseInt(home.score ?? "");
-    const awayScore = parseInt(away.score ?? "");
-    const completed = event.status.type.completed;
-    const live = event.status.type.state === "in";
-
-    // Try to match our local match
-    const match = ALL_MATCHES.find(m => {
-      const t1matchHome = matchesArabicName(m.team1, home.team.displayName) ||
-                          matchesArabicName(m.team1, home.team.shortDisplayName);
-      const t2matchAway = matchesArabicName(m.team2, away.team.displayName) ||
-                          matchesArabicName(m.team2, away.team.shortDisplayName);
-      const t1matchAway = matchesArabicName(m.team1, away.team.displayName) ||
-                          matchesArabicName(m.team1, away.team.shortDisplayName);
-      const t2matchHome = matchesArabicName(m.team2, home.team.displayName) ||
-                          matchesArabicName(m.team2, home.team.shortDisplayName);
-      return (t1matchHome && t2matchAway) || (t1matchAway && t2matchHome);
-    });
-
-    if (match) {
-      const isHomeTeam1 = matchesArabicName(match.team1, home.team.displayName) ||
-                          matchesArabicName(match.team1, home.team.shortDisplayName);
-      results[match.id] = {
-        t1: isHomeTeam1 ? homeScore : awayScore,
-        t2: isHomeTeam1 ? awayScore : homeScore,
-        completed,
-        live,
-      };
-    }
-  }
-  return results;
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function fmt(dateStr: string) {
-  return new Date(dateStr + "T12:00:00").toLocaleDateString("ar-SA", {
+function fmt(d: string) {
+  return new Date(d + "T12:00:00").toLocaleDateString("ar-SA", {
     weekday: "short", day: "numeric", month: "short",
   });
 }
 
-function isMatchLocked(match: Match, results: AllResults): boolean {
-  if (results[match.id]?.completed || results[match.id]?.live) return true;
-  const matchTime = new Date(`${match.date}T${match.time}:00`);
-  return Date.now() > matchTime.getTime();
-}
-
-function getSections(matches: Match[]) {
-  const groups: Record<string, Match[]> = {};
-  const knockouts: Record<string, Match[]> = {};
+function buildSections(matches: Match[]) {
+  const grp: Record<string, Match[]> = {};
+  const ko:  Record<string, Match[]> = {};
   for (const m of matches) {
     if (m.stage === "group") {
-      if (!groups[m.group!]) groups[m.group!] = [];
-      groups[m.group!].push(m);
+      (grp[m.group!] ??= []).push(m);
     } else {
-      if (!knockouts[m.stage]) knockouts[m.stage] = [];
-      knockouts[m.stage].push(m);
+      (ko[m.stage] ??= []).push(m);
     }
   }
-  const sections: { key: string; label: string; matches: Match[] }[] = [];
-  for (const [g, ms] of Object.entries(groups))
-    sections.push({ key: `g-${g}`, label: ms[0].groupName || g, matches: ms });
-  for (const s of ["r32", "r16", "qf", "sf", "third", "final"])
-    if (knockouts[s]) sections.push({ key: s, label: STAGE_LABELS[s], matches: knockouts[s] });
-  return sections;
+  const out: { key: string; label: string; matches: Match[] }[] = [];
+  for (const [g, ms] of Object.entries(grp))
+    out.push({ key: `g-${g}`, label: ms[0].groupName ?? `المجموعة ${g}`, matches: ms });
+  for (const s of ["r32","r16","qf","sf","third","final"] as const)
+    if (ko[s]) out.push({ key: s, label: STAGE_LABELS[s], matches: ko[s] });
+  return out;
 }
 
-// ─── Main App ─────────────────────────────────────────────────────────────────
+// ── HomePage ──────────────────────────────────────────────────────────────────
 
-export default function App() {
-  const [view, setView] = useState<View>("select");
-  const [user, setUser] = useState("");
-  const [myPreds, setMyPreds] = useState<UserPredictions>({});
+export default function HomePage() {
+  const [matches,  setMatches]  = useState<Match[]>(ALL_MATCHES);
   const [allPreds, setAllPreds] = useState<AllPredictions>({});
-  const [results, setResults] = useState<AllResults>({});
-  const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState("");
-  const [espnStatus, setEspnStatus] = useState<"idle" | "loading" | "ok" | "err">("idle");
-  const [matches, setMatches] = useState<Match[]>(ALL_MATCHES);
-  const [scheduleStatus, setScheduleStatus] = useState<"loading" | "ok" | "fallback">("loading");
-  const [adminKey] = useState(() =>
-    typeof window !== "undefined"
-      ? new URLSearchParams(window.location.search).get("admin") || ""
-      : ""
-  );
-  const fetchRef = useRef(false);
+  const [results,  setResults]  = useState<AllResults>({});
+  const [status,   setStatus]   = useState<"loading"|"ok"|"fallback">("loading");
+  const [updated,  setUpdated]  = useState<Date|null>(null);
+  const [filter,   setFilter]   = useState<"all"|"live"|"today"|"done">("all");
 
-  // Fetch live schedule from API
-  useEffect(() => {
-    fetch("/api/schedule")
-      .then(r => r.json())
-      .then((data: ScheduleMatch[]) => {
-        if (!Array.isArray(data) || data.length === 0) {
-          setScheduleStatus("fallback");
-          return;
+  // ── Schedule + live scores ─────────────────────────
+  const refresh = useCallback(async () => {
+    try {
+      const r = await fetch("/api/schedule");
+      const data: ScheduleMatch[] = await r.json();
+      if (!Array.isArray(data) || data.length === 0) { setStatus("fallback"); return; }
+      setMatches(data);
+      setStatus("ok");
+      setUpdated(new Date());
+      const extracted: AllResults = {};
+      for (const m of data) {
+        if ((m.completed || m.live) && m.score != null) {
+          extracted[m.id] = { t1: m.score.home, t2: m.score.away,
+            completed: m.completed ?? false, live: m.live ?? false };
         }
-        setMatches(data);
-        setScheduleStatus("ok");
-        // Extract completed/live results from schedule
-        const extracted: AllResults = {};
-        for (const m of data) {
-          if ((m.completed || m.live) && m.score != null) {
-            extracted[m.id] = {
-              t1: m.score.home,
-              t2: m.score.away,
-              completed: m.completed ?? false,
-              live: m.live ?? false,
-            };
-          }
-        }
-        if (Object.keys(extracted).length > 0) {
-          setResults(prev => ({ ...prev, ...extracted }));
-        }
-      })
-      .catch(() => setScheduleStatus("fallback"));
-  }, []);
-
-  // Init from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem(LOCAL_USER_KEY);
-    if (saved) {
-      setUser(saved);
-      const all = loadLocalAll();
-      setMyPreds(all[saved] || {});
-      setAllPreds(all);
-      setView("predictions");
+      }
+      if (Object.keys(extracted).length) setResults(p => ({ ...p, ...extracted }));
+    } catch {
+      setStatus("fallback");
     }
   }, []);
 
-  // Firebase listener
   useEffect(() => {
-    if (!isFirebaseConfigured || !db) return;
-    const ref = doc(db, "rooms", ROOM_ID);
-    return onSnapshot(ref, (snap) => {
+    refresh();
+    const id = setInterval(refresh, 3 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [refresh]);
+
+  // ── Firebase or localStorage ───────────────────────
+  useEffect(() => {
+    if (!isFirebaseConfigured || !db) {
+      try { setAllPreds(JSON.parse(localStorage.getItem("wc2026_preds") || "{}")); } catch {}
+      return;
+    }
+    return onSnapshot(doc(db, "rooms", ROOM_ID), snap => {
       if (!snap.exists()) return;
-      const data = snap.data();
-      if (data.predictions) setAllPreds(data.predictions);
-      if (data.results) setResults(data.results);
+      const d = snap.data();
+      if (d.predictions) setAllPreds(d.predictions);
+      if (d.results)     setResults(p => ({ ...p, ...d.results }));
     });
   }, []);
 
-  // ESPN fetch (every 3 min)
-  const fetchEspn = useCallback(async () => {
-    if (fetchRef.current) return;
-    fetchRef.current = true;
-    setEspnStatus("loading");
-    try {
-      const r = await fetch("/api/espn");
-      if (!r.ok) throw new Error();
-      const data = await r.json();
-      const parsed = parseEspnEvents(data.events || []);
-      if (Object.keys(parsed).length > 0) {
-        setResults(prev => ({ ...prev, ...parsed }));
-        // Save to Firebase
-        if (isFirebaseConfigured && db) {
-          const ref = doc(db, "rooms", ROOM_ID);
-          await setDoc(ref, { results: parsed, updatedAt: serverTimestamp() }, { merge: true });
-        }
-        setEspnStatus("ok");
-      } else {
-        setEspnStatus("err");
-      }
-    } catch {
-      setEspnStatus("err");
-    } finally {
-      fetchRef.current = false;
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchEspn();
-    const id = setInterval(fetchEspn, 3 * 60 * 1000);
-    return () => clearInterval(id);
-  }, [fetchEspn]);
-
-  const handleSelectName = (name: string) => {
-    setUser(name);
-    localStorage.setItem(LOCAL_USER_KEY, name);
-    const all = loadLocalAll();
-    setMyPreds(all[name] || {});
-    setView("predictions");
-  };
-
-  const handleScore = (matchId: string, team: "t1" | "t2", val: string) => {
-    if (isMatchLocked(matches.find(m => m.id === matchId)!, results)) return;
-    const num = val === "" ? "" : Math.max(0, Math.min(30, parseInt(val) || 0));
-    setMyPreds(prev => ({ ...prev, [matchId]: { ...prev[matchId], [team]: num } }));
-  };
-
-  const handleSave = async () => {
-    if (!user) return;
-    setSaving(true);
-    const all = loadLocalAll();
-    all[user] = myPreds;
-    saveLocalAll(all);
-    setAllPreds({ ...all });
-
-    if (isFirebaseConfigured && db) {
-      try {
-        const ref = doc(db, "rooms", ROOM_ID);
-        const snap = await getDoc(ref);
-        const existing = snap.exists() ? (snap.data().predictions || {}) : {};
-        await setDoc(ref, {
-          predictions: { ...existing, [user]: myPreds },
-          updatedAt: serverTimestamp(),
-        }, { merge: true });
-      } catch (e) { console.error(e); }
-    }
-
-    setSaving(false);
-    setSaveMsg("✅ تم الحفظ!");
-    setTimeout(() => setSaveMsg(""), 3000);
-  };
-
-  const handleAdminSaveResults = async (newResults: AllResults) => {
-    setResults(prev => ({ ...prev, ...newResults }));
-    if (isFirebaseConfigured && db) {
-      await setDoc(doc(db, "rooms", ROOM_ID), { results: newResults }, { merge: true });
-    }
-  };
-
-  const sections = getSections(matches);
-  const completedCount = Object.values(results).filter(r => r.completed).length;
-
-  if (view === "select") return <NameSelector onSelect={handleSelectName} />;
-
-  if (view === "compare")
-    return (
-      <CompareView
-        allPreds={allPreds}
-        results={results}
-        matches={matches}
-        onBack={() => setView("predictions")}
-      />
-    );
-
-  if (view === "leaderboard")
-    return (
-      <LeaderboardView
-        allPreds={allPreds}
-        results={results}
-        currentUser={user}
-        onBack={() => setView("predictions")}
-        matches={matches}
-      />
-    );
-
-  if (view === "admin" && adminKey === (process.env.NEXT_PUBLIC_ADMIN_KEY || "admin2026"))
-    return (
-      <AdminView
-        results={results}
-        onSave={handleAdminSaveResults}
-        onBack={() => setView("predictions")}
-        matches={matches}
-      />
-    );
-
-  return (
-    <div className="min-h-screen pitch-lines">
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-pitch-dark/95 backdrop-blur border-b border-white/10">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-2xl">⚽</span>
-            <div className="min-w-0">
-              <h1 className="font-black text-base text-yellow-400 leading-none">كأس العالم 2026</h1>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-xs text-white/40">{completedCount} مباراة مكتملة</span>
-                {scheduleStatus === "loading" && <span className="text-xs text-blue-400 animate-pulse">⏳ تحميل الجدول...</span>}
-                {scheduleStatus === "ok" && espnStatus === "ok" && <span className="text-xs text-green-400">🟢 بيانات حية</span>}
-                {scheduleStatus === "fallback" && <span className="text-xs text-orange-400">📋 بيانات محلية</span>}
-                {scheduleStatus === "ok" && espnStatus === "loading" && <span className="text-xs text-blue-400 animate-pulse">🔄 تحديث النتائج...</span>}
-                {espnStatus === "err" && (
-                  <button onClick={fetchEspn} className="text-xs text-orange-400 underline">⚠️ إعادة</button>
-                )}
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button onClick={() => setView("compare")} className="btn-outline text-xs px-3 py-2">
-              📊 مقارنة
-            </button>
-            <button onClick={() => setView("leaderboard")} className="btn-outline text-xs px-3 py-2">
-              🏆 النقاط
-            </button>
-            <button
-              onClick={() => { localStorage.removeItem(LOCAL_USER_KEY); setView("select"); }}
-              className="text-xs text-white/40 hover:text-white/70 px-2 py-2 transition"
-            >
-              👤 {user}
-            </button>
-          </div>
-        </div>
-        {saveMsg && (
-          <div className="bg-green-600/80 text-center text-xs py-1 font-bold">{saveMsg}</div>
-        )}
-      </header>
-
-      {/* Save button */}
-      <div className="sticky top-[61px] z-40 max-w-2xl mx-auto px-4 pt-3">
-        <button onClick={handleSave} disabled={saving} className="btn-gold w-full text-base pulse-gold">
-          {saving ? "⏳ جارٍ الحفظ..." : "💾 حفظ التوقعات"}
-        </button>
-      </div>
-
-      {/* Section tabs */}
-      <div className="max-w-2xl mx-auto px-4 pt-3">
-        <div className="flex gap-2 overflow-x-auto pb-2" style={{ scrollbarWidth: "none" }}>
-          {sections.map(s => (
-            <button
-              key={s.key}
-              onClick={() => document.getElementById(s.key)?.scrollIntoView({ behavior: "smooth", block: "start" })}
-              className="flex-shrink-0 text-xs px-3 py-1.5 rounded-full border border-white/20 text-white/60 hover:border-yellow-500/50 hover:text-yellow-400 transition"
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Matches */}
-      <main className="max-w-2xl mx-auto px-4 pb-24 pt-3 space-y-6">
-        {sections.map(section => (
-          <div key={section.key} id={section.key}>
-            <div className="flex items-center gap-3 mb-3">
-              <div className="h-px flex-1 bg-white/10" />
-              <span className="text-yellow-400 font-bold text-sm">{section.label}</span>
-              <div className="h-px flex-1 bg-white/10" />
-            </div>
-            <div className="space-y-2">
-              {section.matches.map(match => (
-                <MatchCard
-                  key={match.id}
-                  match={match}
-                  pred={myPreds[match.id]}
-                  actual={results[match.id]}
-                  locked={isMatchLocked(match, results)}
-                  onChange={(team, val) => handleScore(match.id, team, val)}
-                />
-              ))}
-            </div>
-          </div>
-        ))}
-      </main>
-    </div>
-  );
-}
-
-// ─── NameSelector ─────────────────────────────────────────────────────────────
-
-function NameSelector({ onSelect }: { onSelect: (n: string) => void }) {
-  return (
-    <div className="min-h-screen pitch-lines flex flex-col items-center justify-center p-6">
-      <div className="text-7xl mb-4 animate-bounce">🏆</div>
-      <h1 className="text-3xl font-black text-yellow-400 mb-1 text-center">كأس العالم 2026</h1>
-      <p className="text-white/50 mb-8 text-center text-sm">توقع النتائج وتنافس مع أصدقائك</p>
-      <div className="w-full max-w-sm card-glass p-5">
-        <h2 className="text-lg font-bold text-center mb-4 text-white/90">اختر اسمك</h2>
-        <div className="grid grid-cols-2 gap-2">
-          {PARTICIPANTS.map(name => (
-            <button
-              key={name}
-              onClick={() => onSelect(name)}
-              className="bg-white/5 hover:bg-yellow-500/20 border border-white/10 hover:border-yellow-400/50
-                         rounded-xl py-3 px-3 text-sm font-bold transition-all active:scale-95
-                         text-white hover:text-yellow-300"
-            >
-              {name}
-            </button>
-          ))}
-        </div>
-      </div>
-      {!isFirebaseConfigured && (
-        <div className="mt-5 max-w-sm w-full bg-orange-500/10 border border-orange-500/30 rounded-xl p-3 text-xs text-orange-300">
-          ⚠️ وضع تجريبي — التوقعات محفوظة على جهازك فقط. أضف إعدادات Firebase لمشاركة الجميع.
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── MatchCard ────────────────────────────────────────────────────────────────
-
-function MatchCard({
-  match, pred, actual, locked, onChange,
-}: {
-  match: Match;
-  pred?: Prediction;
-  actual?: ActualResult;
-  locked: boolean;
-  onChange: (team: "t1" | "t2", val: string) => void;
-}) {
-  const hasPred = pred?.t1 !== "" && pred?.t1 != null;
-  let scoreResult: ReturnType<typeof calcPoints> | null = null;
-  if (actual?.completed && hasPred) {
-    scoreResult = calcPoints(pred!, actual);
-  }
-
-  const borderClass = scoreResult
-    ? scoreResult.kind === "exact" ? "border-yellow-400/60"
-      : scoreResult.kind === "result" ? "border-green-500/50"
-      : "border-red-500/30"
-    : hasPred ? "border-blue-500/30"
-    : "";
-
-  return (
-    <div className={`card-glass p-3.5 transition-all ${borderClass}`}>
-      {/* Top row */}
-      <div className="flex items-center justify-between mb-2.5 text-xs text-white/35">
-        <span>{fmt(match.date)} {match.time}</span>
-        <div className="flex items-center gap-2">
-          {actual?.live && <span className="text-red-400 font-bold animate-pulse">🔴 مباشر</span>}
-          {actual?.completed && !actual?.live && <span className="text-green-400">✅ انتهت</span>}
-          {locked && !actual?.completed && !actual?.live && <span className="text-orange-400">🔒 مقفل</span>}
-          {scoreResult && (
-            <span className={`font-bold px-2 py-0.5 rounded text-xs ${
-              scoreResult.kind === "exact" ? "bg-yellow-500/30 text-yellow-300" :
-              scoreResult.kind === "result" ? "bg-green-500/20 text-green-400" :
-              "bg-red-500/20 text-red-400"
-            }`}>
-              {scoreResult.kind === "exact" ? "⭐ +3" : scoreResult.kind === "result" ? "✓ +1" : "✗ 0"}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Match row */}
-      <div className="flex items-center gap-2">
-        {/* Team 1 */}
-        <div className="flex-1 text-center">
-          <div className="text-2xl mb-0.5">{match.flag1}</div>
-          <div className="text-xs font-bold leading-tight">{match.team1}</div>
-        </div>
-
-        {/* Scores: prediction + actual */}
-        <div className="flex flex-col items-center gap-1">
-          {/* Actual score (if available) */}
-          {actual && (actual.completed || actual.live) && (
-            <div className={`flex items-center gap-1 px-3 py-1 rounded-lg font-black text-base ${
-              actual.live ? "bg-red-500/20 text-red-300" : "bg-white/10 text-white"
-            }`}>
-              <span>{isNaN(actual.t1) ? "?" : actual.t1}</span>
-              <span className="text-white/30 text-sm">:</span>
-              <span>{isNaN(actual.t2) ? "?" : actual.t2}</span>
-            </div>
-          )}
-          {/* Prediction inputs */}
-          <div className="flex items-center gap-1.5">
-            <input
-              type="number" min="0" max="30"
-              value={pred?.t1 ?? ""}
-              onChange={e => onChange("t1", e.target.value)}
-              placeholder="-"
-              disabled={locked}
-              className={`score-input ${locked ? "opacity-40 cursor-not-allowed" : ""}`}
-            />
-            <span className="text-white/20 font-bold">:</span>
-            <input
-              type="number" min="0" max="30"
-              value={pred?.t2 ?? ""}
-              onChange={e => onChange("t2", e.target.value)}
-              placeholder="-"
-              disabled={locked}
-              className={`score-input ${locked ? "opacity-40 cursor-not-allowed" : ""}`}
-            />
-          </div>
-          {!actual?.completed && !actual?.live && (
-            <div className="text-[10px] text-white/25">توقعك</div>
-          )}
-        </div>
-
-        {/* Team 2 */}
-        <div className="flex-1 text-center">
-          <div className="text-2xl mb-0.5">{match.flag2}</div>
-          <div className="text-xs font-bold leading-tight">{match.team2}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Leaderboard ──────────────────────────────────────────────────────────────
-
-function LeaderboardView({
-  allPreds, results, currentUser, onBack, matches,
-}: {
-  allPreds: AllPredictions;
-  results: AllResults;
-  currentUser: string;
-  onBack: () => void;
-  matches: Match[];
-}) {
-  const [selected, setSelected] = useState(currentUser);
-
-  const users = Object.keys(allPreds).sort();
-  const scored = users
+  // ── Derived ────────────────────────────────────────
+  const users   = Object.keys(allPreds).sort();
+  const ranked  = users
     .map(u => ({ user: u, ...calcUserScore(allPreds[u] || {}, results) }))
     .sort((a, b) => b.total - a.total || b.exact - a.exact);
 
-  const sections = getSections(matches);
-  const selectedPreds = allPreds[selected] || {};
+  const completedN = Object.values(results).filter(r => r.completed).length;
+  const liveN      = Object.values(results).filter(r => r.live).length;
+  const today      = new Date().toISOString().split("T")[0];
+  const MEDALS     = ["🥇", "🥈", "🥉"];
 
+  const visible = matches.filter(m => {
+    if (filter === "live")  return results[m.id]?.live;
+    if (filter === "done")  return results[m.id]?.completed;
+    if (filter === "today") return m.date === today;
+    return true;
+  });
+  const sections = buildSections(visible);
+
+  // ─────────────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen pitch-lines">
-      <header className="sticky top-0 z-50 bg-pitch-dark/95 backdrop-blur border-b border-white/10">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={onBack} className="text-white/60 hover:text-white text-xl transition">←</button>
-          <div>
-            <h1 className="font-black text-base text-yellow-400">🏆 جدول النقاط</h1>
-            <p className="text-xs text-white/40">{Object.values(results).filter(r => r.completed).length} مباراة مكتملة</p>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen">
 
-      <div className="max-w-2xl mx-auto px-4 pt-4 pb-24 space-y-5">
-        {/* Ranking table */}
-        <div className="card-glass overflow-hidden">
-          <div className="p-3 border-b border-white/10 flex items-center justify-between">
-            <h2 className="font-bold text-yellow-400 text-sm">📊 الترتيب</h2>
-            <span className="text-xs text-white/40">3 نقاط = نتيجة دقيقة • 1 نقطة = نتيجة صحيحة</span>
+      {/* ── NAV ────────────────────────────────────────────────── */}
+      <nav className="sticky top-0 z-50 bg-[#07111f]/95 backdrop-blur border-b border-white/10">
+        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-yellow-500 rounded-xl flex items-center justify-center text-lg shadow-lg shadow-yellow-500/30 flex-shrink-0">
+              ⚽
+            </div>
+            <div className="min-w-0">
+              <h1 className="font-black text-white text-sm leading-none">كأس العالم 2026</h1>
+              <p className="text-[10px] text-white/35 mt-0.5 truncate">
+                {liveN > 0 && <span className="text-red-400 animate-pulse">{liveN} مباشر • </span>}
+                {completedN} مكتملة
+                {status === "loading" && " • جارٍ التحديث..."}
+                {status === "fallback" && " • بيانات محلية"}
+                {updated && status === "ok" &&
+                  ` • ${updated.toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" })}`}
+              </p>
+            </div>
           </div>
-          {scored.length === 0 ? (
-            <p className="p-6 text-center text-white/40 text-sm">لا يوجد توقعات بعد</p>
-          ) : (
+          <Link href="/predict" className="btn-primary text-sm whitespace-nowrap flex-shrink-0">
+            أدخل توقعاتي ←
+          </Link>
+        </div>
+      </nav>
+
+      <div className="max-w-3xl mx-auto px-4 pt-5 pb-24 space-y-5">
+
+        {/* ── LEADERBOARD ─────────────────────────────────────── */}
+        {ranked.length > 0 && (
+          <div className="card overflow-hidden fade-up">
+            <div className="px-4 pt-3 pb-2 border-b border-white/8 flex items-center justify-between">
+              <h2 className="font-black text-yellow-400 text-sm">🏆 الترتيب</h2>
+              <span className="text-[10px] text-white/25">⭐+3 دقيق • ✓+1 صحيح</span>
+            </div>
             <div className="divide-y divide-white/5">
-              {scored.map((s, i) => {
-                const isMe = s.user === currentUser;
-                const medals = ["🥇", "🥈", "🥉"];
+              {ranked.map((r, i) => {
+                const maxPts = ranked[0]?.total || 1;
                 return (
-                  <div
-                    key={s.user}
-                    onClick={() => setSelected(s.user)}
-                    className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-all hover:bg-white/5 ${
-                      selected === s.user ? "bg-yellow-500/10 border-r-2 border-yellow-400" : ""
-                    }`}
-                  >
-                    <span className="text-xl w-8 text-center">{medals[i] || `${i + 1}`}</span>
+                  <div key={r.user}
+                    className={`flex items-center gap-3 px-4 py-3 ${i === 0 ? "bg-yellow-500/5" : ""}`}>
+                    <span className="w-7 text-center flex-shrink-0 text-lg leading-none">
+                      {MEDALS[i] ?? <span className="text-sm text-white/30 font-bold">{i + 1}</span>}
+                    </span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className={`font-bold ${isMe ? "text-yellow-300" : "text-white"}`}>
-                          {s.user} {isMe && "⭐"}
-                        </span>
+                        <span className="font-bold text-sm truncate">{r.user}</span>
                       </div>
-                      <div className="flex items-center gap-3 mt-0.5">
-                        <span className="text-xs text-yellow-400/70">⭐ {s.exact} دقيق</span>
-                        <span className="text-xs text-green-400/70">✓ {s.result} صحيح</span>
-                        <span className="text-xs text-white/30">✗ {s.missed} فائت</span>
-                      </div>
-                      {/* Points bar */}
-                      <div className="mt-1.5 bg-white/10 rounded-full h-1.5 w-full">
-                        <div
-                          className="bg-gradient-to-r from-yellow-500 to-yellow-400 h-1.5 rounded-full transition-all"
-                          style={{ width: `${Math.min(100, (s.total / Math.max(1, scored[0].total)) * 100)}%` }}
-                        />
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="h-1.5 flex-1 bg-white/10 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-yellow-600 to-yellow-400 rounded-full transition-all duration-700"
+                            style={{ width: `${(r.total / maxPts) * 100}%` }}
+                          />
+                        </div>
+                        <span className="text-[10px] text-yellow-400/70 flex-shrink-0">⭐{r.exact} ✓{r.result}</span>
                       </div>
                     </div>
-                    <div className="text-2xl font-black text-yellow-400">{s.total}</div>
+                    <span className="text-2xl font-black text-yellow-400 flex-shrink-0">{r.total}</span>
                   </div>
                 );
               })}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* User picker */}
-        <div className="card-glass p-4">
-          <h3 className="text-sm text-white/50 mb-3">عرض توقعات:</h3>
-          <div className="flex flex-wrap gap-2">
-            {users.map(u => (
-              <button
-                key={u}
-                onClick={() => setSelected(u)}
-                className={`px-3 py-1.5 rounded-full text-sm font-bold border transition-all ${
-                  selected === u
-                    ? "bg-yellow-500 border-yellow-500 text-black"
-                    : "border-white/20 text-white/70 hover:border-white/40"
-                }`}
-              >
-                {u === currentUser && "⭐ "}{u}
+        {/* ── EMPTY STATE ─────────────────────────────────────── */}
+        {ranked.length === 0 && (
+          <div className="text-center py-16 fade-up">
+            <div className="text-6xl mb-4">⚽</div>
+            <h2 className="text-xl font-black text-white mb-2">ابدأ التوقعات</h2>
+            <p className="text-white/40 mb-6 text-sm">كن أول من يدخل توقعاته</p>
+            <Link href="/predict" className="btn-primary inline-block">
+              أدخل توقعاتي ←
+            </Link>
+          </div>
+        )}
+
+        {/* ── FILTERS ─────────────────────────────────────────── */}
+        {matches.length > 0 && (
+          <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+            {([
+              { k: "all",   label: "الكل" },
+              { k: "live",  label: `🔴 مباشر${liveN ? ` (${liveN})` : ""}` },
+              { k: "today", label: "اليوم" },
+              { k: "done",  label: `✅ مكتملة (${completedN})` },
+            ] as const).map(f => (
+              <button key={f.k} onClick={() => setFilter(f.k)}
+                className={`flex-shrink-0 text-xs px-4 py-2 rounded-full border transition-all ${
+                  filter === f.k
+                    ? "bg-yellow-500 border-yellow-500 text-black font-black"
+                    : "border-white/15 text-white/45 hover:border-white/35"
+                }`}>
+                {f.label}
               </button>
             ))}
           </div>
+        )}
+
+        {/* ── MATCH SECTIONS ──────────────────────────────────── */}
+        {visible.length === 0 && filter !== "all" && (
+          <div className="text-center py-10 text-white/30 text-sm">لا توجد مباريات في هذه الفئة الآن</div>
+        )}
+
+        {sections.map(sec => (
+          <div key={sec.key} className="fade-up">
+            <div className="section-title"><span>{sec.label}</span></div>
+            <div className="space-y-3">
+              {sec.matches.map(m => (
+                <MatchCard key={m.id} match={m} actual={results[m.id]} allPreds={allPreds} users={users} />
+              ))}
+            </div>
+          </div>
+        ))}
+
+      </div>
+    </div>
+  );
+}
+
+// ── MatchCard ─────────────────────────────────────────────────────────────────
+
+function MatchCard({ match, actual, allPreds, users }: {
+  match: Match;
+  actual?: ActualResult;
+  allPreds: AllPredictions;
+  users: string[];
+}) {
+  const predsForMatch = users
+    .map(u => ({ user: u, pred: allPreds[u]?.[match.id] }))
+    .filter(x => x.pred?.t1 !== "" && x.pred?.t1 != null && x.pred?.t2 != null);
+
+  const isLive = actual?.live;
+  const isDone = actual?.completed;
+
+  return (
+    <div className={`card overflow-hidden transition-all ${
+      isLive ? "border-red-500/40 live-glow" : isDone ? "border-green-500/10" : "border-white/8"
+    }`}>
+
+      {/* Match body */}
+      <div className="p-4">
+        {/* Top: date + status */}
+        <div className="flex items-center justify-between mb-4 text-[11px]">
+          <span className="text-white/30">
+            {match.groupName ? `${match.groupName} ` : ""}{fmt(match.date)} {match.time}
+            {match.venue ? ` • ${match.venue}` : ""}
+          </span>
+          {isLive ? (
+            <span className="badge-live animate-pulse">🔴 مباشر</span>
+          ) : isDone ? (
+            <span className="badge-done">✅ انتهت</span>
+          ) : (
+            <span className="badge-upcoming">📅 قادمة</span>
+          )}
         </div>
 
-        {/* Selected user's predictions */}
-        {selected && (
-          <div className="space-y-5">
-            {sections.map(section => {
-              const relevant = section.matches.filter(m => {
-                const p = selectedPreds[m.id];
-                return p?.t1 !== "" && p?.t1 != null;
-              });
-              if (relevant.length === 0) return null;
+        {/* Teams + score */}
+        <div className="flex items-center gap-2">
+          {/* Team 1 */}
+          <div className="flex-1 text-center">
+            <div className="text-4xl mb-1.5">{match.flag1}</div>
+            <div className="text-xs font-bold text-white/80 leading-snug">{match.team1}</div>
+          </div>
+
+          {/* Middle: score or vs */}
+          <div className="flex-shrink-0 text-center w-24">
+            {(isDone || isLive) && actual ? (
+              <div className={`font-black text-3xl leading-none ${isLive ? "text-red-400" : "text-white"}`}>
+                {actual.t1}<span className="text-white/25 mx-1">:</span>{actual.t2}
+              </div>
+            ) : (
+              <div className="text-white/20 font-black text-lg tracking-widest">VS</div>
+            )}
+            <div className="text-[10px] text-white/20 mt-1.5">{match.time}</div>
+          </div>
+
+          {/* Team 2 */}
+          <div className="flex-1 text-center">
+            <div className="text-4xl mb-1.5">{match.flag2}</div>
+            <div className="text-xs font-bold text-white/80 leading-snug">{match.team2}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Predictions strip */}
+      {predsForMatch.length > 0 && (
+        <div className="border-t border-white/8 bg-black/25 px-4 py-3">
+          <div className="text-[10px] text-white/25 font-bold mb-2 flex items-center gap-1.5">
+            <span className="w-1 h-3 bg-yellow-500/50 rounded-full inline-block" />
+            توقعات المشاركين
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {predsForMatch.map(({ user, pred }) => {
+              const pts = isDone ? calcPoints(pred, actual!) : null;
               return (
-                <div key={section.key}>
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="h-px flex-1 bg-white/10" />
-                    <span className="text-xs text-yellow-400 font-bold">{section.label}</span>
-                    <div className="h-px flex-1 bg-white/10" />
-                  </div>
-                  <div className="space-y-1.5">
-                    {relevant.map(m => {
-                      const p = selectedPreds[m.id];
-                      const actual = results[m.id];
-                      const pts = actual?.completed ? calcPoints(p, actual) : null;
-                      return (
-                        <div key={m.id} className="card-glass px-3 py-2 flex items-center gap-2">
-                          <div className="text-center w-16">
-                            <div className="text-lg">{m.flag1}</div>
-                            <div className="text-[10px] text-white/60 leading-tight">{m.team1}</div>
-                          </div>
-                          <div className="flex-1 text-center">
-                            <div className={`font-black text-lg ${
-                              pts?.kind === "exact" ? "text-yellow-400" :
-                              pts?.kind === "result" ? "text-green-400" :
-                              pts?.kind === "none" && actual?.completed ? "text-red-400" : "text-white"
-                            }`}>
-                              {p.t1} : {p.t2}
-                            </div>
-                            {actual?.completed && (
-                              <div className="text-xs text-white/40">نتيجة: {actual.t1}:{actual.t2}</div>
-                            )}
-                            {pts && (
-                              <div className="text-xs font-bold mt-0.5">
-                                {pts.kind === "exact" ? "⭐ +3" : pts.kind === "result" ? "✓ +1" : "✗ 0"}
-                              </div>
-                            )}
-                          </div>
-                          <div className="text-center w-16">
-                            <div className="text-lg">{m.flag2}</div>
-                            <div className="text-[10px] text-white/60 leading-tight">{m.team2}</div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                <div key={user}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold ${
+                    pts?.kind === "exact"  ? "chip-exact"  :
+                    pts?.kind === "result" ? "chip-result" :
+                    pts?.kind === "none"   ? "chip-miss"   : "chip-pending"
+                  }`}>
+                  <span className="text-[10px] opacity-60">{user}</span>
+                  <span className="font-black">{pred.t1}:{pred.t2}</span>
+                  {pts && <span>{pts.kind === "exact" ? "⭐" : pts.kind === "result" ? "✓" : "✗"}</span>}
                 </div>
               );
             })}
           </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── CompareView ─────────────────────────────────────────────────────────────
-
-function CompareView({
-  allPreds, results, matches, onBack,
-}: {
-  allPreds: AllPredictions;
-  results: AllResults;
-  matches: Match[];
-  onBack: () => void;
-}) {
-  const users = Object.keys(allPreds).sort();
-  const [stageFilter, setStageFilter] = useState<"all" | "group" | "knockout">("all");
-  const [onlyCompleted, setOnlyCompleted] = useState(false);
-
-  const scored = users
-    .map(u => ({ user: u, ...calcUserScore(allPreds[u] || {}, results) }))
-    .sort((a, b) => b.total - a.total);
-
-  const filtered = matches.filter(m => {
-    if (stageFilter === "group" && m.stage !== "group") return false;
-    if (stageFilter === "knockout" && m.stage === "group") return false;
-    if (onlyCompleted && !results[m.id]?.completed) return false;
-    return true;
-  });
-
-  // Group by section label
-  const sections: { label: string; matches: Match[] }[] = [];
-  const seenKeys: string[] = [];
-  const seenMap: Record<string, Match[]> = {};
-  for (const m of filtered) {
-    const key = m.stage === "group" ? (m.groupName || m.group || "أ") : STAGE_LABELS[m.stage];
-    if (!seenMap[key]) { seenMap[key] = []; seenKeys.push(key); }
-    seenMap[key].push(m);
-  }
-  for (const key of seenKeys) sections.push({ label: key, matches: seenMap[key] });
-
-  const medals = ["🥇", "🥈", "🥉"];
-
-  return (
-    <div className="min-h-screen pitch-lines">
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-pitch-dark/95 backdrop-blur border-b border-white/10">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={onBack} className="text-white/60 hover:text-white text-xl transition">←</button>
-          <div className="flex-1">
-            <h1 className="font-black text-base text-yellow-400">📊 مقارنة التوقعات</h1>
-            <p className="text-xs text-white/40">{Object.values(results).filter(r => r.completed).length} مباراة مكتملة</p>
-          </div>
         </div>
-
-        {/* Mini leaderboard strip */}
-        {scored.length > 0 && (
-          <div className="border-t border-white/5 bg-black/20">
-            <div className="max-w-5xl mx-auto px-4 py-2 flex gap-4 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-              {scored.map((s, i) => (
-                <div key={s.user} className="flex items-center gap-1.5 flex-shrink-0">
-                  <span className="text-sm">{medals[i] || `${i + 1}.`}</span>
-                  <span className="text-sm font-bold text-white/80">{s.user}</span>
-                  <span className="text-sm font-black text-yellow-400">{s.total}ن</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Filters */}
-        <div className="border-t border-white/5 bg-black/10">
-          <div className="max-w-5xl mx-auto px-4 py-2 flex items-center gap-2 flex-wrap">
-            {(["all", "group", "knockout"] as const).map(f => (
-              <button
-                key={f}
-                onClick={() => setStageFilter(f)}
-                className={`text-xs px-3 py-1 rounded-full border transition-all ${
-                  stageFilter === f
-                    ? "bg-yellow-500 border-yellow-500 text-black font-bold"
-                    : "border-white/20 text-white/50 hover:border-white/40"
-                }`}
-              >
-                {f === "all" ? "الكل" : f === "group" ? "دور المجموعات" : "الأدوار الإقصائية"}
-              </button>
-            ))}
-            <button
-              onClick={() => setOnlyCompleted(p => !p)}
-              className={`text-xs px-3 py-1 rounded-full border transition-all ${
-                onlyCompleted
-                  ? "bg-green-600 border-green-500 text-white font-bold"
-                  : "border-white/20 text-white/50 hover:border-white/40"
-              }`}
-            >
-              {onlyCompleted ? "✅ المكتملة فقط" : "المكتملة فقط"}
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {users.length === 0 ? (
-        <div className="flex flex-col items-center justify-center min-h-[60vh] text-white/40 gap-3">
-          <span className="text-5xl">📭</span>
-          <p>لا يوجد توقعات بعد</p>
-        </div>
-      ) : (
-        <main className="max-w-5xl mx-auto px-2 pb-24 pt-4 space-y-8">
-          {sections.map(({ label, matches: sMatches }) => (
-            <div key={label}>
-              {/* Section header */}
-              <div className="flex items-center gap-3 mb-3 px-2">
-                <div className="h-px flex-1 bg-white/10" />
-                <span className="text-yellow-400 font-bold text-sm">{label}</span>
-                <div className="h-px flex-1 bg-white/10" />
-              </div>
-
-              {/* Scrollable table */}
-              <div className="overflow-x-auto rounded-xl border border-white/10">
-                <table className="w-full text-xs border-collapse" style={{ minWidth: `${280 + users.length * 90}px` }}>
-                  <thead>
-                    <tr className="bg-white/5">
-                      <th className="sticky right-0 bg-pitch-dark/90 backdrop-blur px-3 py-2.5 text-right font-bold text-white/60 border-b border-white/10 min-w-[170px]">
-                        المباراة
-                      </th>
-                      {users.map(u => (
-                        <th key={u} className="px-2 py-2.5 text-center font-bold text-white/80 border-b border-white/10 min-w-[80px]">
-                          {u}
-                        </th>
-                      ))}
-                      <th className="px-2 py-2.5 text-center font-bold text-green-400 border-b border-white/10 min-w-[70px]">
-                        النتيجة
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sMatches.map((m, idx) => {
-                      const actual = results[m.id];
-                      return (
-                        <tr key={m.id} className={idx % 2 === 0 ? "bg-white/[0.02]" : ""}>
-                          {/* Match cell */}
-                          <td className="sticky right-0 bg-pitch-dark/90 backdrop-blur px-3 py-2.5 border-b border-white/5">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-base">{m.flag1}</span>
-                              <span className="text-white/70 font-bold truncate max-w-[55px]">{m.team1}</span>
-                              <span className="text-white/30 text-[10px] mx-0.5">vs</span>
-                              <span className="text-white/70 font-bold truncate max-w-[55px]">{m.team2}</span>
-                              <span className="text-base">{m.flag2}</span>
-                            </div>
-                            <div className="text-[10px] text-white/30 mt-0.5">{fmt(m.date)}</div>
-                          </td>
-
-                          {/* Each user's prediction */}
-                          {users.map(u => {
-                            const p = allPreds[u]?.[m.id];
-                            const hasPred = p?.t1 !== "" && p?.t1 != null && p?.t2 !== "" && p?.t2 != null;
-                            const pts = actual?.completed && hasPred ? calcPoints(p, actual) : null;
-
-                            return (
-                              <td key={u} className="px-2 py-2.5 text-center border-b border-white/5">
-                                {hasPred ? (
-                                  <div className={`inline-flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg ${
-                                    pts?.kind === "exact"
-                                      ? "bg-yellow-500/25 text-yellow-300"
-                                      : pts?.kind === "result"
-                                      ? "bg-green-500/20 text-green-400"
-                                      : pts?.kind === "none"
-                                      ? "bg-red-500/15 text-red-400"
-                                      : "bg-white/5 text-white/70"
-                                  }`}>
-                                    <span className="font-black text-sm leading-none">{p.t1}:{p.t2}</span>
-                                    {pts && (
-                                      <span className="text-[10px] leading-none opacity-80">
-                                        {pts.kind === "exact" ? "⭐+3" : pts.kind === "result" ? "✓+1" : "✗0"}
-                                      </span>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <span className="text-white/20">—</span>
-                                )}
-                              </td>
-                            );
-                          })}
-
-                          {/* Actual result */}
-                          <td className="px-2 py-2.5 text-center border-b border-white/5">
-                            {actual?.completed ? (
-                              <span className="font-black text-green-400 text-sm">{actual.t1}:{actual.t2}</span>
-                            ) : actual?.live ? (
-                              <span className="font-black text-red-400 text-sm animate-pulse">{actual.t1}:{actual.t2} 🔴</span>
-                            ) : (
-                              <span className="text-white/20 text-sm">—</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ))}
-        </main>
       )}
-    </div>
-  );
-}
 
-// ─── AdminView ────────────────────────────────────────────────────────────────
-
-function AdminView({
-  results, onSave, onBack, matches,
-}: {
-  results: AllResults;
-  onSave: (r: AllResults) => Promise<void>;
-  onBack: () => void;
-  matches: Match[];
-}) {
-  const [localResults, setLocalResults] = useState<AllResults>({ ...results });
-  const [saving, setSaving] = useState(false);
-
-  const handleSet = (matchId: string, team: "t1" | "t2", val: string) => {
-    const num = parseInt(val);
-    setLocalResults(prev => ({
-      ...prev,
-      [matchId]: { ...prev[matchId], [team]: isNaN(num) ? 0 : num, completed: true },
-    }));
-  };
-
-  const handleComplete = (matchId: string, val: boolean) => {
-    setLocalResults(prev => ({
-      ...prev,
-      [matchId]: { ...(prev[matchId] || { t1: 0, t2: 0 }), completed: val },
-    }));
-  };
-
-  const save = async () => {
-    setSaving(true);
-    await onSave(localResults);
-    setSaving(false);
-  };
-
-  const groupMatches = matches.filter(m => m.stage === "group");
-
-  return (
-    <div className="min-h-screen pitch-lines">
-      <header className="sticky top-0 z-50 bg-red-900/90 backdrop-blur border-b border-red-500/30">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={onBack} className="text-white/60 hover:text-white text-xl">←</button>
-          <h1 className="font-black text-red-300">🔧 لوحة الإدارة - إدخال النتائج</h1>
+      {/* No predictions */}
+      {predsForMatch.length === 0 && users.length > 0 && (
+        <div className="border-t border-white/5 px-4 py-2 text-[11px] text-white/15 text-center">
+          لا توقعات لهذه المباراة بعد —{" "}
+          <Link href="/predict" className="text-yellow-500/60 hover:text-yellow-400 underline underline-offset-2">
+            أدخل توقعك
+          </Link>
         </div>
-      </header>
-      <div className="max-w-2xl mx-auto px-4 py-4 pb-24 space-y-3">
-        <button onClick={save} disabled={saving} className="btn-gold w-full mb-4">
-          {saving ? "⏳ جارٍ الحفظ..." : "💾 حفظ النتائج"}
-        </button>
-        {groupMatches.map(m => {
-          const r = localResults[m.id];
-          return (
-            <div key={m.id} className="card-glass p-3 flex items-center gap-3">
-              <label className="flex items-center gap-2 text-xs text-white/50 w-16 flex-shrink-0">
-                <input
-                  type="checkbox"
-                  checked={r?.completed || false}
-                  onChange={e => handleComplete(m.id, e.target.checked)}
-                  className="w-4 h-4"
-                />
-                مكتمل
-              </label>
-              <div className="flex-1 text-center text-sm">
-                {m.flag1} {m.team1}
-              </div>
-              <input
-                type="number" min="0" max="20"
-                value={r?.t1 ?? ""}
-                onChange={e => handleSet(m.id, "t1", e.target.value)}
-                placeholder="0"
-                className="w-12 h-9 text-center text-lg font-bold bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:border-yellow-400"
-              />
-              <span className="text-white/30">:</span>
-              <input
-                type="number" min="0" max="20"
-                value={r?.t2 ?? ""}
-                onChange={e => handleSet(m.id, "t2", e.target.value)}
-                placeholder="0"
-                className="w-12 h-9 text-center text-lg font-bold bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:border-yellow-400"
-              />
-              <div className="flex-1 text-center text-sm">
-                {m.flag2} {m.team2}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      )}
     </div>
   );
 }

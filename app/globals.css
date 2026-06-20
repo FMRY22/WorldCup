@@ -3,101 +3,94 @@
 @tailwind utilities;
 
 @layer base {
-  * {
-    font-family: "Cairo", "Noto Sans Arabic", sans-serif;
-  }
+  * { font-family: "Cairo", "Noto Sans Arabic", sans-serif; }
 
   body {
-    background: linear-gradient(135deg, #0a1f0a 0%, #0f2d1a 50%, #0a1f0a 100%);
+    background: #07111f;
+    color: #f8fafc;
     min-height: 100vh;
   }
 }
 
 @layer components {
-  .pitch-lines {
-    background-image:
-      repeating-linear-gradient(
-        0deg,
-        transparent,
-        transparent 39px,
-        rgba(255, 255, 255, 0.03) 39px,
-        rgba(255, 255, 255, 0.03) 40px
-      ),
-      repeating-linear-gradient(
-        90deg,
-        transparent,
-        transparent 39px,
-        rgba(255, 255, 255, 0.03) 39px,
-        rgba(255, 255, 255, 0.03) 40px
-      );
+  /* Cards */
+  .card {
+    @apply bg-white/[0.04] border border-white/[0.08] rounded-2xl;
+  }
+  .card-hover {
+    @apply card hover:border-white/20 transition-all duration-200;
   }
 
+  /* Buttons */
+  .btn-primary {
+    @apply bg-yellow-500 hover:bg-yellow-400 active:bg-yellow-600
+           text-black font-black px-5 py-3 rounded-xl
+           transition-all duration-150 active:scale-95
+           shadow-lg shadow-yellow-500/20 cursor-pointer;
+  }
+  .btn-ghost {
+    @apply border border-white/20 hover:border-white/40 hover:bg-white/5
+           text-white/70 hover:text-white font-bold px-4 py-2.5 rounded-xl
+           transition-all duration-150 active:scale-95 cursor-pointer;
+  }
+  .btn-danger {
+    @apply border border-red-500/30 text-red-400 hover:bg-red-500/10
+           font-bold px-4 py-2.5 rounded-xl transition-all duration-150
+           active:scale-95 cursor-pointer text-sm;
+  }
+
+  /* Score input */
   .score-input {
-    @apply w-14 h-12 text-center text-2xl font-bold bg-white/10 border-2 border-white/20
-           rounded-xl text-white focus:outline-none focus:border-yellow-400
-           focus:bg-white/20 transition-all duration-200;
+    @apply w-14 h-14 text-center text-2xl font-black
+           bg-white/10 border-2 border-white/20 rounded-xl text-white
+           focus:outline-none focus:border-yellow-400 focus:bg-white/15
+           transition-all duration-150;
   }
 
-  .card-glass {
-    @apply bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl;
-  }
+  /* Prediction chip */
+  .chip-pending  { @apply bg-white/5   border border-white/10  text-white/60; }
+  .chip-exact    { @apply bg-yellow-500/20 border border-yellow-500/40 text-yellow-300; }
+  .chip-result   { @apply bg-green-500/15  border border-green-500/25  text-green-400; }
+  .chip-miss     { @apply bg-red-500/10    border border-red-500/20    text-red-400/70; }
 
-  .btn-gold {
-    @apply bg-gradient-to-r from-yellow-500 to-yellow-400 text-black font-bold
-           px-6 py-3 rounded-xl hover:from-yellow-400 hover:to-yellow-300
-           transition-all duration-200 shadow-lg shadow-yellow-500/20
-           active:scale-95 cursor-pointer;
-  }
+  /* Status badges */
+  .badge-live      { @apply bg-red-500/20  text-red-400   border border-red-500/30   text-[10px] font-bold px-2 py-0.5 rounded-full; }
+  .badge-done      { @apply bg-green-500/15 text-green-400 border border-green-500/20 text-[10px] px-2 py-0.5 rounded-full; }
+  .badge-upcoming  { @apply bg-white/5      text-white/30  border border-white/10     text-[10px] px-2 py-0.5 rounded-full; }
 
-  .btn-outline {
-    @apply border-2 border-white/30 text-white font-bold px-6 py-3 rounded-xl
-           hover:border-white/60 hover:bg-white/5 transition-all duration-200
-           active:scale-95 cursor-pointer;
+  /* Section divider */
+  .section-title {
+    @apply flex items-center gap-3 my-4;
   }
-
-  .group-badge {
-    @apply inline-flex items-center justify-center w-8 h-8 rounded-full
-           bg-yellow-500 text-black text-sm font-bold;
+  .section-title span {
+    @apply text-yellow-400 font-black text-sm px-1;
+  }
+  .section-title::before,
+  .section-title::after {
+    content: "";
+    @apply flex-1 h-px bg-white/10;
   }
 }
 
-/* Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-}
-::-webkit-scrollbar-track {
-  background: rgba(255,255,255,0.05);
-}
-::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.2);
-  border-radius: 3px;
-}
-
-/* Number input arrows hide */
+/* Hide number spinners */
 input[type="number"]::-webkit-inner-spin-button,
-input[type="number"]::-webkit-outer-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-input[type="number"] {
-  -moz-appearance: textfield;
-}
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
+input[type="number"] { -moz-appearance: textfield; }
 
-/* Smooth transitions */
-.fade-in {
-  animation: fadeIn 0.3s ease-in;
-}
+/* Thin scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+/* Animations */
+@keyframes fadeUp {
+  from { opacity:0; transform:translateY(8px); }
+  to   { opacity:1; transform:translateY(0); }
 }
+.fade-up { animation: fadeUp 0.25s ease-out; }
 
-.pulse-gold {
-  animation: pulseGold 2s infinite;
+@keyframes liveGlow {
+  0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.3); }
+  50%      { box-shadow: 0 0 0 8px rgba(239,68,68,0); }
 }
-
-@keyframes pulseGold {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.4); }
-  50% { box-shadow: 0 0 0 12px rgba(234, 179, 8, 0); }
-}
+.live-glow { animation: liveGlow 2s infinite; }
