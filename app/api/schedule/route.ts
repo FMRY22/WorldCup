@@ -119,6 +119,7 @@ async function fetchApiSportsEvents(fixtureId: number): Promise<ApiSportsFixture
 }
 
 async function fetchApiSports() {
+  console.log(`[api-sports] key set: ${!!APISPORTS_KEY}, length: ${APISPORTS_KEY?.length ?? 0}`);
   const res = await fetch(APISPORTS_URL, {
     headers: { "x-apisports-key": APISPORTS_KEY! },
     cache: "no-store",
