@@ -5,7 +5,7 @@ import { doc, getDoc, setDoc, onSnapshot, serverTimestamp } from "firebase/fires
 import Link from "next/link";
 import { db, isFirebaseConfigured, ROOM_ID } from "@/lib/firebase";
 import { ALL_MATCHES, type Match } from "@/lib/matches";
-import { calcPoints, type Prediction, type ActualResult } from "@/lib/scoring";
+import { calcPoints, findActual, type Prediction, type ActualResult } from "@/lib/scoring";
 import { PARTICIPANTS } from "@/lib/config";
 
 type MyPredictions = Record<string, Prediction>;
@@ -21,6 +21,10 @@ interface ScheduleMatch extends Match {
 
 function predKey(m: Match) { return `${m.team1}|${m.team2}`; }
 function saudiNow() { return Date.now() + 3 * 60 * 60 * 1000; }
+
+// المنتخب غير المحدد بعد في الأدوار الإقصائية
+const TBD = "المنتخب المتأهل";
+function isTBD(m: Match) { return m.team1 === TBD || m.team2 === TBD; }
 
 function fmtTime(time: string): string {
   const [h, m] = time.split(":").map(Number);
@@ -41,7 +45,8 @@ function fmtDayLabel(d: string) {
 }
 
 function isLocked(match: Match, results: AllResults) {
-  if (results[predKey(match)]?.completed || results[predKey(match)]?.live) return true;
+  const a = findActual(match.team1, match.team2, results);
+  if (a?.completed || a?.live) return true;
   const matchUtcMs = new Date(`${match.date}T${match.time}:00Z`).getTime() - 3 * 60 * 60 * 1000;
   return Date.now() > matchUtcMs;
 }
@@ -97,15 +102,11 @@ function CountdownBadge({ match }: { match: Match }) {
 }
 
 // ── Champion picker ───────────────────────────────────────────────────────────
-const TOURNAMENT_TEAMS = Array.from(
-  new Map(
-    ALL_MATCHES
-      .filter(m => m.stage === "group")
-      .flatMap(m => [[m.team1, m.flag1] as [string, string], [m.team2, m.flag2] as [string, string]])
-  ).entries()
-).map(([name, flag]) => ({ name, flag })).sort((a, b) => a.name.localeCompare(b.name, "ar"));
+type TeamOpt = { name: string; flag: string };
 
-function ChampionPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function ChampionPicker({ value, onChange, teams }: {
+  value: string; onChange: (v: string) => void; teams: TeamOpt[];
+}) {
   const [open, setOpen] = useState(false);
   return (
     <div className="card overflow-hidden">
@@ -123,7 +124,7 @@ function ChampionPicker({ value, onChange }: { value: string; onChange: (v: stri
         <div className="flex items-center gap-2">
           {value ? (
             <span className="text-sm font-bold text-yellow-400">
-              {TOURNAMENT_TEAMS.find(t => t.name === value)?.flag} {value}
+              {teams.find(t => t.name === value)?.flag} {value}
             </span>
           ) : (
             <span className="text-sm text-white/30">اختر...</span>
@@ -135,7 +136,7 @@ function ChampionPicker({ value, onChange }: { value: string; onChange: (v: stri
       {open && (
         <div className="border-t border-white/8 bg-black/20 p-3 max-h-52 overflow-y-auto">
           <div className="grid grid-cols-3 gap-1.5">
-            {TOURNAMENT_TEAMS.map(t => (
+            {teams.map(t => (
               <button
                 key={t.name}
                 onClick={() => { onChange(value === t.name ? "" : t.name); setOpen(false); }}
@@ -303,16 +304,30 @@ export default function PredictClient() {
   };
 
   // ── Derived ─────────────────────────────────────────────────────────────────
-  const total     = matches.length;
+  // المباريات القابلة للتوقع = نستبعد الأدوار الإقصائية قبل تحديد فرقها
+  const predictable = matches.filter(m => !isTBD(m));
+  const total     = predictable.length;
   const predicted = Object.values(preds).filter(p => p?.t1 !== "" && p?.t1 != null).length;
-  const lockedN   = matches.filter(m => isLocked(m, results)).length;
+  const lockedN   = predictable.filter(m => isLocked(m, results)).length;
   const upcomingN = total - lockedN;
 
-  const filteredMatches = matches.filter(m => {
+  const filteredMatches = predictable.filter(m => {
     if (predFilter === "upcoming") return !isLocked(m, results);
     if (predFilter === "done")     return isLocked(m, results);
     return true;
   });
+
+  // قائمة فرق البطولة لاختيار البطل — مبنية من البيانات الحية (ESPN) لا الثابتة
+  const tournamentTeams = useMemo<TeamOpt[]>(() => {
+    const map = new Map<string, string>();
+    for (const m of matches) {
+      if (m.team1 && m.team1 !== TBD) map.set(m.team1, m.flag1);
+      if (m.team2 && m.team2 !== TBD) map.set(m.team2, m.flag2);
+    }
+    return Array.from(map.entries())
+      .map(([name, flag]) => ({ name, flag }))
+      .sort((a, b) => a.name.localeCompare(b.name, "ar"));
+  }, [matches]);
 
   const sections = buildSectionsByDate(filteredMatches);
 
@@ -410,7 +425,7 @@ export default function PredictClient() {
       <div className="max-w-xl mx-auto px-4 pt-4 pb-6 space-y-4">
 
         {/* Champion picker */}
-        <ChampionPicker value={champion} onChange={handleChampion} />
+        <ChampionPicker value={champion} onChange={handleChampion} teams={tournamentTeams} />
 
         {/* Filters */}
         <div className="flex gap-2">
@@ -450,7 +465,7 @@ export default function PredictClient() {
                   key={predKey(m)}
                   match={m}
                   pred={preds[predKey(m)]}
-                  actual={results[predKey(m)]}
+                  actual={findActual(m.team1, m.team2, results)}
                   locked={isLocked(m, results)}
                   onChange={(team, val) => handleScore(m, team, val)}
                 />

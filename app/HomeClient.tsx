@@ -5,7 +5,7 @@ import { doc, onSnapshot } from "firebase/firestore";
 import Link from "next/link";
 import { db, isFirebaseConfigured, ROOM_ID } from "@/lib/firebase";
 import { ALL_MATCHES, STAGE_LABELS, type Match } from "@/lib/matches";
-import { calcPoints, calcUserScore, type Prediction, type ActualResult } from "@/lib/scoring";
+import { calcPoints, calcUserScore, findActual, findUserPred, type Prediction, type ActualResult } from "@/lib/scoring";
 import { PARTICIPANTS } from "@/lib/config";
 import { toArabicPlayerName } from "@/lib/playerMap";
 
@@ -226,7 +226,7 @@ export default function HomeClient() {
 
   // بطل البطولة الفعلي = الفائز بالنهائي بعد اكتماله
   const finalMatch    = matches.find(m => m.stage === "final");
-  const finalResult   = finalMatch ? results[predKey(finalMatch)] : undefined;
+  const finalResult   = finalMatch ? findActual(finalMatch.team1, finalMatch.team2, results) : undefined;
   const actualChampion = finalMatch && finalResult?.completed
     ? (finalResult.t1 > finalResult.t2 ? finalMatch.team1
       : finalResult.t2 > finalResult.t1 ? finalMatch.team2 : "")
@@ -242,13 +242,14 @@ export default function HomeClient() {
   const today      = new Date(saudiNow()).toISOString().split("T")[0];
   const MEDALS     = ["🥇","🥈","🥉"];
 
-  const liveMatches = matches.filter(m => results[predKey(m)]?.live);
+  const liveMatches = matches.filter(m => findActual(m.team1, m.team2, results)?.live);
 
   const visible = matches.filter(m => {
-    if (filter === "live")     return results[predKey(m)]?.live;
-    if (filter === "done")     return results[predKey(m)]?.completed;
+    const a = findActual(m.team1, m.team2, results);
+    if (filter === "live")     return a?.live;
+    if (filter === "done")     return a?.completed;
     if (filter === "today")    return m.date === today;
-    if (filter === "upcoming") return !results[predKey(m)]?.completed && !results[predKey(m)]?.live;
+    if (filter === "upcoming") return !a?.completed && !a?.live;
     return true;
   });
 
@@ -285,9 +286,9 @@ export default function HomeClient() {
                 )}
                 <span className="font-bold text-white/90">{m.flag1} {m.team1}</span>
                 <span className="font-black text-white text-base tabular-nums">
-                  {results[predKey(m)]?.t1 ?? "–"}
+                  {findActual(m.team1, m.team2, results)?.t1 ?? "–"}
                   <span className="text-white/30 mx-1">:</span>
-                  {results[predKey(m)]?.t2 ?? "–"}
+                  {findActual(m.team1, m.team2, results)?.t2 ?? "–"}
                 </span>
                 <span className="font-bold text-white/90">{m.team2} {m.flag2}</span>
                 <span className="text-white/15 mx-2">|</span>
@@ -415,7 +416,7 @@ export default function HomeClient() {
             <div className="section-title"><span>{sec.label}</span></div>
             <div className="space-y-3">
               {sec.matches.map(m => (
-                <MatchCard key={predKey(m)} match={m} actual={results[predKey(m)]} allPreds={allPreds} users={users} fetchedAt={updated} />
+                <MatchCard key={predKey(m)} match={m} actual={findActual(m.team1, m.team2, results)} allPreds={allPreds} users={users} fetchedAt={updated} />
               ))}
             </div>
           </div>
@@ -439,10 +440,10 @@ export default function HomeClient() {
 function MatchCard({ match, actual, allPreds, users, fetchedAt }: {
   match: ScheduleMatch; actual?: ActualResult; allPreds: AllPredictions; users: string[]; fetchedAt?: Date | null;
 }) {
-  const pk = predKey(match);
   const predsForMatch = users
-    .map(u => ({ user: u, pred: allPreds[u]?.[pk] }))
-    .filter(x => x.pred?.t1 !== "" && x.pred?.t1 != null && x.pred?.t2 != null);
+    .map(u => ({ user: u, pred: findUserPred(match.team1, match.team2, allPreds[u] ?? {}) }))
+    .filter((x): x is { user: string; pred: Prediction } =>
+      x.pred?.t1 !== "" && x.pred?.t1 != null && x.pred?.t2 != null);
 
   const isLive = actual?.live ?? match.live ?? false;
   const isDone = actual?.completed ?? match.completed ?? false;

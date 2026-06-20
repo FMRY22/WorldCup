@@ -23,6 +23,43 @@ export function calcPoints(
 // مكافأة توقع البطل
 export const CHAMPION_BONUS = 5;
 
+// يبحث عن النتيجة الفعلية لمباراة بغضّ النظر عن ترتيب الفريقين في المفتاح.
+// لو وُجدت النتيجة بترتيب معكوس، تُقلب النتيجتان لتطابق ترتيب العرض.
+export function findActual(
+  team1: string,
+  team2: string,
+  results: Record<string, ActualResult>
+): ActualResult | undefined {
+  const direct = results[`${team1}|${team2}`];
+  if (direct) return direct;
+  const swapped = results[`${team2}|${team1}`];
+  if (swapped) return { ...swapped, t1: swapped.t2, t2: swapped.t1 };
+  return undefined;
+}
+
+// يجد توقع المستخدم لمباراة (team1 ضد team2) بأي ترتيب، مع محاذاة النتيجتين
+// لترتيب العرض. يُستخدم في عرض البطاقات.
+export function findUserPred(
+  team1: string,
+  team2: string,
+  preds: Record<string, Prediction>
+): Prediction | undefined {
+  const direct = preds[`${team1}|${team2}`];
+  if (direct && direct.t1 !== "" && direct.t2 !== "") return direct;
+  const sw = preds[`${team2}|${team1}`];
+  if (sw && sw.t1 !== "" && sw.t2 !== "") return { t1: sw.t2, t2: sw.t1 };
+  return direct;
+}
+
+// يجد توقع المستخدم لنتيجة معيّنة بغضّ النظر عن ترتيب الفريقين.
+function findPred(
+  mid: string,
+  preds: Record<string, Prediction>
+): Prediction | undefined {
+  const [a, b] = mid.split("|");
+  return findUserPred(a, b, preds);
+}
+
 export function calcUserScore(
   preds: Record<string, Prediction>,
   results: Record<string, ActualResult>,
@@ -34,7 +71,7 @@ export function calcUserScore(
 
   for (const [mid, actual] of Object.entries(results)) {
     if (!actual.completed) continue;
-    const pred = preds[mid];
+    const pred = findPred(mid, preds);
     if (!pred || pred.t1 === "" || pred.t2 === "") { missed++; continue; }
     const r = calcPoints(pred, actual);
     details[mid] = r;
