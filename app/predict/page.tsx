@@ -20,9 +20,12 @@ interface ScheduleMatch extends Match {
 // مفتاح ثابت للتوقع — لا يتغير بتغير الـ API
 function predKey(m: Match) { return `${m.team1}|${m.team2}`; }
 
+function saudiNow() { return Date.now() + 3 * 60 * 60 * 1000; }
+
 function fmtDayLabel(d: string) {
-  const today    = new Date().toISOString().split("T")[0];
-  const tomorrow = new Date(Date.now() + 86400000).toISOString().split("T")[0];
+  const now      = saudiNow();
+  const today    = new Date(now).toISOString().split("T")[0];
+  const tomorrow = new Date(now + 86400000).toISOString().split("T")[0];
   if (d === today)    return "اليوم";
   if (d === tomorrow) return "غداً";
   return new Date(d + "T12:00:00").toLocaleDateString("ar-SA", {
@@ -32,7 +35,9 @@ function fmtDayLabel(d: string) {
 
 function isLocked(match: Match, results: AllResults) {
   if (results[predKey(match)]?.completed || results[predKey(match)]?.live) return true;
-  return Date.now() > new Date(`${match.date}T${match.time}:00`).getTime();
+  // match.date/time مخزنين بتوقيت السعودية — نحوّل للـ UTC للمقارنة
+  const matchUtcMs = new Date(`${match.date}T${match.time}:00Z`).getTime() - 3 * 60 * 60 * 1000;
+  return Date.now() > matchUtcMs;
 }
 
 function buildSectionsByDate(matches: Match[]) {

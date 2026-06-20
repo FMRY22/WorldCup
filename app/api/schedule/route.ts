@@ -40,7 +40,16 @@ function toArabic(enName: string): string {
 }
 
 let cache: { data: unknown[]; ts: number } | null = null;
-const TTL = 3 * 60 * 1000; // 3 minutes
+const TTL = 30 * 1000; // 30 seconds — نتائج شبه لحظية
+
+// تحويل UTC → توقيت السعودية (UTC+3)
+function toSaudiTime(utcDate: Date): { date: string; time: string } {
+  const local = new Date(utcDate.getTime() + 3 * 60 * 60 * 1000);
+  return {
+    date: local.toISOString().split("T")[0],
+    time: local.toISOString().slice(11, 16),
+  };
+}
 
 // ── football-data.org ─────────────────────────────────────────────────────────
 
@@ -61,7 +70,7 @@ interface FdorgMatch {
 async function fetchFDOrg() {
   const res = await fetch(FDORG_URL, {
     headers: { "X-Auth-Token": FDORG_KEY! },
-    next: { revalidate: 180 },
+    cache: "no-store",
   });
   if (!res.ok) throw new Error(`football-data.org ${res.status}`);
   const data = (await res.json()) as { matches: FdorgMatch[] };
@@ -69,7 +78,7 @@ async function fetchFDOrg() {
   return data.matches.map((m) => {
     const groupLetter = m.group?.replace("GROUP_", "") ?? "";
     const stage: StageType = FDORG_STAGE[m.stage] ?? "group";
-    const date = new Date(m.utcDate);
+    const { date: matchDate, time: matchTime } = toSaudiTime(new Date(m.utcDate));
 
     const homeEn = m.homeTeam.name || m.homeTeam.shortName;
     const awayEn = m.awayTeam.name || m.awayTeam.shortName;
@@ -89,8 +98,8 @@ async function fetchFDOrg() {
       team2: toArabic(awayEn),
       flag1: getFlag(homeEn),
       flag2: getFlag(awayEn),
-      date: date.toISOString().split("T")[0],
-      time: date.toISOString().slice(11, 16),
+      date: matchDate,
+      time: matchTime,
       venue: m.venue ?? "",
       status: m.status,
       score:
@@ -121,6 +130,17 @@ interface EspnEvent {
   }>;
 }
 
+function detectEspnStage(homeEn: string, awayEn: string): StageType {
+  const s = (homeEn + " " + awayEn).toLowerCase();
+  if (s.includes("semifinal") && s.includes("loser")) return "third";
+  if (s.includes("semifinal"))   return "final";
+  if (s.includes("quarterfinal")) return "sf";
+  if (s.includes("round of 16")) return "qf";
+  if (s.includes("round of 32")) return "r16";
+  if (s.includes("group") || s.includes("third place")) return "r32";
+  return "group";
+}
+
 async function fetchESPN() {
   const ranges = ["20260611-20260703", "20260704-20260719"];
   const events: EspnEvent[] = [];
@@ -129,7 +149,7 @@ async function fetchESPN() {
     try {
       const res = await fetch(`${ESPN_BASE}?dates=${range}&limit=100`, {
         headers: { "User-Agent": "Mozilla/5.0 (compatible)" },
-        next: { revalidate: 180 },
+        cache: "no-store",
       });
       if (!res.ok) continue;
       const data = (await res.json()) as { events?: EspnEvent[] };
@@ -166,20 +186,23 @@ async function fetchESPN() {
     const homeScore = completed || live ? parseInt(home?.score ?? "") : null;
     const awayScore = completed || live ? parseInt(away?.score ?? "") : null;
 
-    const date = new Date(event.date);
+    const { date: matchDate, time: matchTime } = toSaudiTime(new Date(event.date));
+    const stage = detectEspnStage(homeEn, awayEn);
+    // للمجموعات فقط نأخذ الحرف من الملاحظات
+    const resolvedGroup = stage === "group" ? (groupLetter || undefined) : undefined;
 
     return {
       id: event.id,
-      stage: "group" as StageType,
-      group: groupLetter || undefined,
-      groupName: groupLetter ? GROUP_NAMES[groupLetter] : undefined,
+      stage,
+      group: resolvedGroup,
+      groupName: resolvedGroup ? GROUP_NAMES[resolvedGroup] : undefined,
       matchday: undefined,
       team1: toArabic(homeEn) || homeEn,
       team2: toArabic(awayEn) || awayEn,
       flag1: getFlag(homeEn),
       flag2: getFlag(awayEn),
-      date: date.toISOString().split("T")[0],
-      time: date.toISOString().slice(11, 16),
+      date: matchDate,
+      time: matchTime,
       venue: comp?.venue?.fullName ?? "",
       status: completed ? "FINISHED" : live ? "IN_PLAY" : "SCHEDULED",
       score:

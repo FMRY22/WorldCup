@@ -6,6 +6,7 @@ import Link from "next/link";
 import { db, isFirebaseConfigured, ROOM_ID } from "@/lib/firebase";
 import { ALL_MATCHES, STAGE_LABELS, type Match } from "@/lib/matches";
 import { calcPoints, calcUserScore, type Prediction, type ActualResult } from "@/lib/scoring";
+import { PARTICIPANTS } from "@/lib/config";
 
 type AllPredictions = Record<string, Record<string, Prediction>>;
 type AllResults    = Record<string, ActualResult>;
@@ -18,9 +19,12 @@ interface ScheduleMatch extends Match {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
+function saudiNow() { return Date.now() + 3 * 60 * 60 * 1000; }
+
 function fmtDayLabel(d: string) {
-  const today    = new Date().toISOString().split("T")[0];
-  const tomorrow = new Date(Date.now() + 86400000).toISOString().split("T")[0];
+  const now      = saudiNow();
+  const today    = new Date(now).toISOString().split("T")[0];
+  const tomorrow = new Date(now + 86400000).toISOString().split("T")[0];
   if (d === today)    return "اليوم";
   if (d === tomorrow) return "غداً";
   return new Date(d + "T12:00:00").toLocaleDateString("ar-SA", {
@@ -96,7 +100,7 @@ export default function HomePage() {
 
   useEffect(() => {
     refresh();
-    const id = setInterval(refresh, 3 * 60 * 1000);
+    const id = setInterval(refresh, 30 * 1000);
     return () => clearInterval(id);
   }, [refresh]);
 
@@ -119,14 +123,16 @@ export default function HomePage() {
   }, []);
 
   // ── Derived ────────────────────────────────────────
-  const users   = Object.keys(allPreds).sort();
-  const ranked  = users
+  // نعرض فقط المشاركين الرسميين — نتجاهل أي أسماء قديمة في Firebase
+  const users  = PARTICIPANTS;
+  const ranked = PARTICIPANTS
     .map(u => ({ user: u, ...calcUserScore(allPreds[u] || {}, results) }))
+    .filter(r => allPreds[r.user] && Object.keys(allPreds[r.user]).length > 0)
     .sort((a, b) => b.total - a.total || b.exact - a.exact);
 
   const completedN = Object.values(results).filter(r => r.completed).length;
   const liveN      = Object.values(results).filter(r => r.live).length;
-  const today      = new Date().toISOString().split("T")[0];
+  const today      = new Date(saudiNow()).toISOString().split("T")[0];
   const MEDALS     = ["🥇", "🥈", "🥉"];
 
   const visible = matches.filter(m => {
