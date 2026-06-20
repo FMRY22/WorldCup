@@ -53,11 +53,11 @@ function toSaudiTime(utcDate: Date): { date: string; time: string } {
 
 // ── football-data.org ─────────────────────────────────────────────────────────
 
-interface FdorgTeam { name: string; shortName: string }
+interface FdorgTeam { id: number; name: string; shortName: string }
 interface FdorgGoal {
   minute: number | null;
   type: string;
-  team: { name: string };
+  team: { id: number; name: string };
   scorer: { name: string | null };
 }
 interface FdorgMatch {
@@ -99,7 +99,7 @@ async function fetchFDOrg() {
     const goals = m.goals?.map(g => ({
       name: g.scorer?.name ?? "?",
       minute: g.minute ?? undefined,
-      team: g.team.name === (m.homeTeam.name || m.homeTeam.shortName) ? "home" as const : "away" as const,
+      team: g.team.id === m.homeTeam.id ? "home" as const : "away" as const,
     })) ?? [];
 
     return {
@@ -220,7 +220,9 @@ async function fetchESPN() {
     const resolvedGroup = stage === "group" ? (groupLetter || undefined) : undefined;
 
     const displayClock = event.status?.type?.displayClock;
-    const minute = live && displayClock ? (parseInt(displayClock) || undefined) : undefined;
+    const minute = live && displayClock
+      ? (parseInt(displayClock.replace("+", "").split(":")[0]) || undefined)
+      : undefined;
 
     const details = comp?.details ?? [];
     const scorers = details

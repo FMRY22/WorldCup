@@ -1,0 +1,319 @@
+export const PLAYER_NAME_AR: Record<string, string> = {
+  // ────────── الأرجنتين ──────────
+  "Lionel Messi": "ليونيل ميسي",
+  "L. Messi": "ليونيل ميسي",
+  "Julian Alvarez": "خوليان ألفاريز",
+  "Julián Álvarez": "خوليان ألفاريز",
+  "Lautaro Martinez": "لاوتارو مارتينيز",
+  "Lautaro Martínez": "لاوتارو مارتينيز",
+  "Angel Di Maria": "أنخيل دي ماريا",
+  "Ángel Di María": "أنخيل دي ماريا",
+  "Paulo Dybala": "باولو ديبالا",
+  "Rodrigo De Paul": "رودريغو دي بول",
+  "Alejandro Garnacho": "أليخاندرو غارناتشو",
+  "Thiago Almada": "تياغو ألمادا",
+
+  // ────────── البرازيل ──────────
+  "Vinicius Junior": "فينيسيوس جونيور",
+  "Vinicius Jr": "فينيسيوس جونيور",
+  "Vinicius Jr.": "فينيسيوس جونيور",
+  "Rodrygo": "رودريغو",
+  "Neymar": "نيمار",
+  "Raphinha": "رافينيا",
+  "Endrick": "إنريك",
+  "Gabriel Martinelli": "غابرييل مارتينيلي",
+  "Richarlison": "ريتشارليسون",
+  "Casemiro": "كاسيميرو",
+  "Lucas Paqueta": "لوكاس باكيتا",
+  "Lucas Paquetá": "لوكاس باكيتا",
+  "Savinho": "سافينيو",
+
+  // ────────── فرنسا ──────────
+  "Kylian Mbappe": "كيليان مبابي",
+  "Kylian Mbappé": "كيليان مبابي",
+  "Antoine Griezmann": "أنتوان غريزمان",
+  "Ousmane Dembele": "أوسمان ديمبيلي",
+  "Ousmane Dembélé": "أوسمان ديمبيلي",
+  "Olivier Giroud": "أوليفييه جيرو",
+  "Karim Benzema": "كريم بنزيمة",
+  "Marcus Thuram": "ماركوس تورام",
+  "Randal Kolo Muani": "راندال كولو موياني",
+
+  // ────────── البرتغال ──────────
+  "Cristiano Ronaldo": "كريستيانو رونالدو",
+  "C. Ronaldo": "كريستيانو رونالدو",
+  "Bruno Fernandes": "برونو فيرنانديز",
+  "Bernardo Silva": "برناردو سيلفا",
+  "Rafael Leao": "رافاييل لياو",
+  "Rafael Leão": "رافاييل لياو",
+  "Joao Felix": "جواو فيليكس",
+  "João Félix": "جواو فيليكس",
+  "Diogo Jota": "دييغو جوتا",
+  "Ruben Neves": "روبين نيفيز",
+  "Rúben Neves": "روبين نيفيز",
+  "Goncalo Ramos": "غونسالو راموس",
+  "Gonçalo Ramos": "غونسالو راموس",
+  "Vitinha": "فيتينيا",
+
+  // ────────── إسبانيا ──────────
+  "Alvaro Morata": "ألفارو موراتا",
+  "Álvaro Morata": "ألفارو موراتا",
+  "Dani Olmo": "داني أولمو",
+  "Pedri": "بيدري",
+  "Gavi": "غافي",
+  "Ferran Torres": "فيران توريس",
+  "Lamine Yamal": "لامين يامال",
+  "Mikel Oyarzabal": "ميكيل أوياردزابال",
+  "Nico Williams": "نيكو ويليامز",
+  "Fabian Ruiz": "فابيان رويز",
+  "Fabián Ruiz": "فابيان رويز",
+  "Rodrigo Moreno": "رودريغو مورينو",
+
+  // ────────── ألمانيا ──────────
+  "Thomas Mueller": "توماس مولر",
+  "Thomas Müller": "توماس مولر",
+  "Joshua Kimmich": "يوشوا كيميش",
+  "Leroy Sane": "لروي ساني",
+  "Leroy Sané": "لروي ساني",
+  "Kai Havertz": "كاي هافيرتز",
+  "Florian Wirtz": "فلوريان فيرتس",
+  "Ilkay Gundogan": "إلكاي غوندوغان",
+  "İlkay Gündoğan": "إلكاي غوندوغان",
+  "Jamal Musiala": "جامال موسيالا",
+  "Niclas Fullkrug": "نيكلاس فولكروغ",
+  "Niclas Füllkrug": "نيكلاس فولكروغ",
+  "Serge Gnabry": "سيرج غنابري",
+
+  // ────────── إنجلترا ──────────
+  "Harry Kane": "هاري كين",
+  "Jude Bellingham": "جود بيلينغهام",
+  "Bukayo Saka": "بوكايو ساكا",
+  "Phil Foden": "فيل فودن",
+  "Marcus Rashford": "ماركوس راشفورد",
+  "Raheem Sterling": "راهيم ستيرلينغ",
+  "Declan Rice": "ديكلان رايس",
+  "Cole Palmer": "كول بالمر",
+  "Ollie Watkins": "أولي واتكينز",
+  "Jordan Henderson": "جوردان هيندرسون",
+
+  // ────────── هولندا ──────────
+  "Virgil van Dijk": "فيرجيل فان دايك",
+  "Memphis Depay": "ممفيس ديباي",
+  "Cody Gakpo": "كودي غاكبو",
+  "Xavi Simons": "تشافي سيمونز",
+  "Wout Weghorst": "ووت ويغهورست",
+  "Donyell Malen": "دونييل مالين",
+  "Tijjani Reijnders": "تيجاني راينديرز",
+  "Jurrien Timber": "يوريين تيمبر",
+
+  // ────────── بلجيكا ──────────
+  "Kevin De Bruyne": "كيفن دي بروين",
+  "Romelu Lukaku": "روميلو لوكاكو",
+  "Dries Mertens": "دريس مرتنس",
+  "Axel Witsel": "أكسيل فيتسيل",
+  "Youri Tielemans": "يوري تيليمانز",
+  "Jeremy Doku": "جيريمي دوكو",
+  "Lois Openda": "لويس أوبندا",
+
+  // ────────── المغرب ──────────
+  "Achraf Hakimi": "أشرف حكيمي",
+  "Hakim Ziyech": "حكيم زياش",
+  "Youssef En-Nesyri": "يوسف النصيري",
+  "Sofyan Amrabat": "سفيان أمرابط",
+  "Noussair Mazraoui": "نصير مزراوي",
+  "Azzedine Ounahi": "عزالدين أوناحي",
+  "Abdelhamid Sabiri": "عبدالحميد صبيري",
+  "Selim Amallah": "سليم أمالاح",
+  "Brahim Diaz": "إبراهيم دياز",
+  "Brahim Díaz": "إبراهيم دياز",
+  "Youssef En Nesyri": "يوسف النصيري",
+
+  // ────────── مصر ──────────
+  "Mohamed Salah": "محمد صلاح",
+  "M. Salah": "محمد صلاح",
+  "Mostafa Mohamed": "مصطفى محمد",
+  "Omar Marmoush": "عمر مرموش",
+  "Mahmoud Trezeguet": "محمود تريزيغيه",
+  "Ahmed Hegazi": "أحمد حجازي",
+  "Ahmed El Shenawy": "أحمد الشناوي",
+  "Zaki": "زكي",
+
+  // ────────── السعودية ──────────
+  "Salem Al-Dawsari": "سالم الدوسري",
+  "Mohammed Al-Shehri": "محمد الشهري",
+  "Saleh Al-Shehri": "صالح الشهري",
+  "Firas Al-Buraikan": "فراس البريكان",
+  "Ali Al-Buleahi": "علي البليهي",
+  "Abdulelah Al-Malki": "عبدالإله الملكي",
+  "Sultan Al-Ghannam": "سلطان الغنام",
+  "Saud Abdulhamid": "سعود عبدالحميد",
+  "Mohammed Kanno": "محمد قنو",
+  "Hattab Al-Tambakti": "حاتم الطنبكتي",
+  "Yasser Al-Shahrani": "ياسر الشهراني",
+  "Abdulelah Al-Amri": "عبدالإله العمري",
+  "Mohamed Al-Buraik": "محمد البريك",
+  "Ibrahim Al-Qasim": "إبراهيم القاسم",
+  "Nasser Al-Dawsari": "ناصر الدوسري",
+  "Abdullah Al-Hamdan": "عبدالله الحمدان",
+
+  // ────────── الجزائر ──────────
+  "Riyad Mahrez": "رياض محرز",
+  "Islam Slimani": "إسلام سليماني",
+  "Yacine Brahimi": "ياسين براهيمي",
+  "Aissa Mandi": "عيسى منزي",
+  "Ismail Bennacer": "إسماعيل بن ناصر",
+  "Youcef Atal": "يوسف عطال",
+  "Andy Delort": "أندي دلور",
+  "Sofiane Feghouli": "سفيان فغولي",
+  "Houssem Aouar": "حسام عوار",
+
+  // ────────── تونس ──────────
+  "Youssef Msakni": "يوسف مساكني",
+  "Wahbi Khazri": "وهبي خضري",
+  "Anis Ben Slimane": "أنس بن سليمان",
+  "Montassar Talbi": "منتصر طلبي",
+  "Ellyes Skhiri": "إلياس الشخيري",
+
+  // ────────── الولايات المتحدة ──────────
+  "Christian Pulisic": "كريستيان بوليسيتش",
+  "Tyler Adams": "تايلر آدامز",
+  "Weston McKennie": "ويستون ماكيني",
+  "Giovanni Reyna": "جيوفاني رينا",
+  "Josh Sargent": "جوش سارجنت",
+  "Ricardo Pepi": "ريكاردو بيبي",
+  "Gio Reyna": "جيو رينا",
+  "Yunus Musah": "يونس موسى",
+  "Matt Turner": "مات تيرنر",
+  "Folarin Balogun": "فولارين بالوغون",
+
+  // ────────── كندا ──────────
+  "Alphonso Davies": "ألفونسو ديفيز",
+  "Jonathan David": "جوناثان ديفيد",
+  "Cyle Larin": "سيل لارين",
+  "Tajon Buchanan": "تايجون بوكانان",
+  "Stephen Eustaquio": "ستيفن أوستاكيو",
+
+  // ────────── المكسيك ──────────
+  "Hirving Lozano": "هيرفينغ لوزانو",
+  "Raul Jimenez": "راؤول خيمينيز",
+  "Héctor Moreno": "إكتور مورينو",
+  "Guillermo Ochoa": "غييرمو أوتشوا",
+  "Edson Alvarez": "إيدسون ألفاريز",
+  "Uriel Antuna": "أوريل أنتونا",
+
+  // ────────── كولومبيا ──────────
+  "James Rodriguez": "خاميس رودريغيز",
+  "James Rodríguez": "خاميس رودريغيز",
+  "Luis Diaz": "لويس دياز",
+  "Luis Díaz": "لويس دياز",
+  "Falcao": "فالكاو",
+  "Radamel Falcao": "راداميل فالكاو",
+  "Jhon Duran": "جون دوران",
+  "Cuadrado": "كوادرادو",
+  "Juan Cuadrado": "خوان كوادرادو",
+
+  // ────────── كرواتيا ──────────
+  "Luka Modric": "لوكا مودريتش",
+  "Luka Modrić": "لوكا مودريتش",
+  "Ivan Perisic": "إيفان بيريسيتش",
+  "Ivan Perišić": "إيفان بيريسيتش",
+  "Mateo Kovacic": "ماتيو كوفاتشيتش",
+  "Mateo Kovačić": "ماتيو كوفاتشيتش",
+  "Marcelo Brozovic": "مارتشيلو برودوفيتش",
+  "Marcelo Brozović": "مارتشيلو برودوفيتش",
+  "Ivan Gvardiol": "إيفان غفاردول",
+  "Andrej Kramaric": "أندريه كراماريتش",
+  "Andrej Kramarić": "أندريه كراماريتش",
+
+  // ────────── السنغال ──────────
+  "Sadio Mane": "ساديو ماني",
+  "Sadio Mané": "ساديو ماني",
+  "Kalidou Koulibaly": "كاليدو كوليبالي",
+  "Idrissa Gueye": "إدريسا غاي",
+  "Idrissa Gana Gueye": "إدريسا غانا غاي",
+  "Ismaila Sarr": "إسماعيلا صار",
+  "Cheikhou Kouyate": "شيخو كوياتيه",
+  "Iliman Ndiaye": "إيليمان نداي",
+
+  // ────────── اليابان ──────────
+  "Kaoru Mitoma": "كاورو ميتوما",
+  "Takefusa Kubo": "تاكيفوسا كوبو",
+  "Ritsu Doan": "ريتسو دوان",
+  "Daichi Kamada": "دايتشي كامادا",
+  "Takumi Minamino": "تاكومي ميناميتو",
+  "Hiroki Ito": "هيروكي إيتو",
+  "Ao Tanaka": "أو تاناكا",
+  "Wataru Endo": "واتارو إيندو",
+
+  // ────────── كوريا الجنوبية ──────────
+  "Heung-min Son": "هيونغ مين سون",
+  "Heung-Min Son": "هيونغ مين سون",
+  "Lee Kang-in": "لي كانغ إن",
+  "Hwang Hee-chan": "هوانغ هي تشان",
+  "Cho Gue-sung": "تشو غيو سونغ",
+  "Kim Min-jae": "كيم مين جاي",
+
+  // ────────── بولندا ──────────
+  "Robert Lewandowski": "روبرت لواندوفسكي",
+  "Piotr Zielinski": "بيوتر زيلينسكي",
+  "Piotr Zieliński": "بيوتر زيلينسكي",
+  "Kamil Grosicki": "كاميل غروسيتسكي",
+
+  // ────────── سويسرا ──────────
+  "Granit Xhaka": "غرانيت جاكا",
+  "Xherdan Shaqiri": "شيردان شاكيري",
+  "Breel Embolo": "بريل إمبولو",
+  "Michel Aebischer": "ميشيل إيبيشر",
+  "Remo Freuler": "ريمو فرويلر",
+  "Dan Ndoye": "دان إندوي",
+
+  // ────────── صربيا ──────────
+  "Aleksandar Mitrovic": "ألكسندر ميتروفيتش",
+  "Aleksandar Mitrović": "ألكسندر ميتروفيتش",
+  "Dusan Vlahovic": "دوشان فلاهوفيتش",
+  "Dušan Vlahović": "دوشان فلاهوفيتش",
+  "Sergej Milinkovic-Savic": "سيرغي ميلينكوفيتش سافيتش",
+  "Sergej Milinković-Savić": "سيرغي ميلينكوفيتش سافيتش",
+
+  // ────────── إيطاليا ──────────
+  "Federico Chiesa": "فيديريكو كييزا",
+  "Gianluca Scamacca": "جيانلوكا سكاماكا",
+  "Ciro Immobile": "تشيرو إيموبيلي",
+  "Lorenzo Pellegrini": "لورينزو بيليغريني",
+  "Nicolo Barella": "نيكولو باريلا",
+  "Nicolò Barella": "نيكولو باريلا",
+  "Giacomo Raspadori": "جياكومو راسبادوري",
+  "Matteo Retegui": "ماتيو ريتيغي",
+
+  // ────────── أوروغواي ──────────
+  "Luis Suarez": "لويس سواريز",
+  "Luis Suárez": "لويس سواريز",
+  "Darwin Nunez": "داروين نونيز",
+  "Darwin Núñez": "داروين نونيز",
+  "Edinson Cavani": "إدنسون كافاني",
+  "Federico Valverde": "فيديريكو فالفيردي",
+  "Ronald Araujo": "رونالد أراوخو",
+  "Ronald Araújo": "رونالد أراوخو",
+
+  // ────────── نيجيريا ──────────
+  "Victor Osimhen": "فيكتور أوسيمين",
+  "Kelechi Iheanacho": "كيليكي إيهياناتشو",
+  "Alex Iwobi": "أليكس إيووبي",
+  "Wilfried Ndidi": "ويلفريد نديدي",
+  "Frank Onyeka": "فرانك أونييكا",
+
+  // ────────── أستراليا ──────────
+  "Mathew Leckie": "ماثيو ليكي",
+  "Martin Boyle": "مارتن بويل",
+  "Mitchell Duke": "ميتشيل ديوك",
+  "Mat Ryan": "مات ريان",
+  "Aaron Mooy": "آرون موي",
+
+  // هدف ذاتي
+  "Own Goal": "هدف ذاتي",
+};
+
+export function toArabicPlayerName(name: string): string {
+  if (!name || name === "?") return "لاعب";
+  return PLAYER_NAME_AR[name] ?? name;
+}

@@ -7,6 +7,7 @@ import { db, isFirebaseConfigured, ROOM_ID } from "@/lib/firebase";
 import { ALL_MATCHES, STAGE_LABELS, type Match } from "@/lib/matches";
 import { calcPoints, calcUserScore, type Prediction, type ActualResult } from "@/lib/scoring";
 import { PARTICIPANTS } from "@/lib/config";
+import { toArabicPlayerName } from "@/lib/playerMap";
 
 type AllPredictions = Record<string, Record<string, Prediction>>;
 type AllResults    = Record<string, ActualResult>;
@@ -409,8 +410,8 @@ function MatchCard({ match, actual, allPreds, users }: {
     .map(u => ({ user: u, pred: allPreds[u]?.[pk] }))
     .filter(x => x.pred?.t1 !== "" && x.pred?.t1 != null && x.pred?.t2 != null);
 
-  const isLive = actual?.live;
-  const isDone = actual?.completed;
+  const isLive = actual?.live ?? match.live ?? false;
+  const isDone = actual?.completed ?? match.completed ?? false;
 
   return (
     <div className={`card overflow-hidden transition-all ${
@@ -427,8 +428,8 @@ function MatchCard({ match, actual, allPreds, users }: {
           </div>
           <div className="flex items-center gap-1.5 flex-wrap justify-end">
             {isLive && match.minute != null && (
-              <span className="text-[10px] font-black text-red-300 bg-red-500/10 border border-red-500/20 rounded-full px-2 py-0.5 animate-pulse">
-                ⏱ {match.minute}'
+              <span className="text-[11px] font-black text-red-300 bg-red-500/10 border border-red-500/20 rounded-full px-2.5 py-0.5 animate-pulse">
+                ⏱ {match.minute}&apos;
               </span>
             )}
             {isLive ? (
@@ -462,15 +463,21 @@ function MatchCard({ match, actual, allPreds, users }: {
         </div>
       </div>
 
-      {(isDone || isLive) && match.scorers && match.scorers.length > 0 && (
-        <div className="border-t border-white/5 px-4 py-2 flex flex-wrap gap-x-4 gap-y-0.5">
-          {match.scorers.map((s, i) => (
-            <span key={i} className="text-[11px] text-white/50 flex items-center gap-1">
-              ⚽ <span className="text-white/70">{s.team === "home" ? match.flag1 : match.flag2}</span>
-              <span className="font-bold text-white/60">{s.name}</span>
-              {s.minute != null && <span className="text-white/30">{s.minute}'</span>}
-            </span>
-          ))}
+      {match.scorers && match.scorers.length > 0 && (
+        <div className="border-t border-white/5 px-4 py-2 flex flex-wrap gap-x-4 gap-y-1">
+          {match.scorers.map((s, i) => {
+            const flag = s.team === "home" ? match.flag1 : match.flag2;
+            const nameAr = toArabicPlayerName(s.name);
+            const isOwnGoal = s.name === "Own Goal";
+            return (
+              <span key={i} className="inline-flex items-center gap-1 text-[11px]" dir="rtl">
+                <span className="text-base leading-none">{flag}</span>
+                <span className={`font-bold ${isOwnGoal ? "text-red-400/60" : "text-white/70"}`}>{nameAr}</span>
+                {s.minute != null && <span className="text-white/30">{s.minute}&apos;</span>}
+                <span className={isOwnGoal ? "text-red-400/40" : "text-white/30"}>⚽</span>
+              </span>
+            );
+          })}
         </div>
       )}
 
