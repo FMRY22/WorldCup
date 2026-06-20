@@ -82,6 +82,7 @@ export default function HomePage() {
       setStatus("ok");
       setUpdated(new Date());
       setMatches(data);
+      try { localStorage.setItem("wc2026_schedule", JSON.stringify(data)); } catch {}
       const extracted: AllResults = {};
       for (const api of data) {
         if (!(api.completed || api.live) || api.score == null) continue;
@@ -99,6 +100,10 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
+    try {
+      const c = localStorage.getItem("wc2026_schedule");
+      if (c) { const p = JSON.parse(c); if (Array.isArray(p) && p.length) setMatches(p); }
+    } catch {}
     refresh();
     const id = setInterval(refresh, 30 * 1000);
     return () => clearInterval(id);

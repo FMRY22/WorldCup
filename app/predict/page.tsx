@@ -74,6 +74,7 @@ export default function PredictPage() {
       const data: ScheduleMatch[] = await r.json();
       if (!Array.isArray(data) || !data.length) return;
       setMatches(data);
+      try { localStorage.setItem("wc2026_schedule", JSON.stringify(data)); } catch {}
       // استخرج النتائج وخزّنها بمفتاح أسماء الفرق
       const extracted: AllResults = {};
       for (const m of data) {
@@ -89,7 +90,13 @@ export default function PredictPage() {
     }
   }, []);
 
-  useEffect(() => { loadSchedule(); }, [loadSchedule]);
+  useEffect(() => {
+    try {
+      const c = localStorage.getItem("wc2026_schedule");
+      if (c) { const p = JSON.parse(c); if (Array.isArray(p) && p.length) setMatches(p); }
+    } catch {}
+    loadSchedule();
+  }, [loadSchedule]);
 
   useEffect(() => {
     const savedUser = localStorage.getItem("wc2026_user");
