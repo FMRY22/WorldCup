@@ -20,9 +20,14 @@ export function calcPoints(
   return { pts: 0, kind: "none" };
 }
 
+// مكافأة توقع البطل
+export const CHAMPION_BONUS = 5;
+
 export function calcUserScore(
   preds: Record<string, Prediction>,
-  results: Record<string, ActualResult>
+  results: Record<string, ActualResult>,
+  championPick?: string,
+  actualChampion?: string
 ) {
   let total = 0, exact = 0, result = 0, missed = 0;
   const details: Record<string, ReturnType<typeof calcPoints>> = {};
@@ -38,5 +43,9 @@ export function calcUserScore(
     if (r.kind === "result") result++;
   }
 
-  return { total, exact, result, missed, details };
+  // +5 إذا أصاب توقع البطل (بعد اكتمال النهائي)
+  const championHit = !!championPick && !!actualChampion && championPick === actualChampion;
+  if (championHit) total += CHAMPION_BONUS;
+
+  return { total, exact, result, missed, championHit, details };
 }

@@ -155,12 +155,6 @@ const GROUPS: {
 
 function generateGroupMatches(): Match[] {
   const matches: Match[] = [];
-  const pairings = [
-    [0, 1, 2, 3, 1],
-    [2, 3, 1, 2],
-    [0, 2, 1, 3],
-    [0, 3, 1, 2],
-  ];
 
   for (const group of GROUPS) {
     const [t0, t1, t2, t3] = group.teams;

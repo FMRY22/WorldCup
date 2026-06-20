@@ -223,8 +223,17 @@ export default function HomeClient() {
 
   // ── Derived ─────────────────────────────────────────────────────────────────
   const users  = PARTICIPANTS;
+
+  // بطل البطولة الفعلي = الفائز بالنهائي بعد اكتماله
+  const finalMatch    = matches.find(m => m.stage === "final");
+  const finalResult   = finalMatch ? results[predKey(finalMatch)] : undefined;
+  const actualChampion = finalMatch && finalResult?.completed
+    ? (finalResult.t1 > finalResult.t2 ? finalMatch.team1
+      : finalResult.t2 > finalResult.t1 ? finalMatch.team2 : "")
+    : "";
+
   const ranked = PARTICIPANTS
-    .map(u => ({ user: u, ...calcUserScore(allPreds[u] || {}, results) }))
+    .map(u => ({ user: u, ...calcUserScore(allPreds[u] || {}, results, champion[u], actualChampion) }))
     .filter(r => allPreds[r.user] && Object.keys(allPreds[r.user]).length > 0)
     .sort((a, b) => b.total - a.total || b.exact - a.exact || b.result - a.result);
 
@@ -331,8 +340,12 @@ export default function HomeClient() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-sm">{r.user}</span>
                         {champ && (
-                          <span className="text-[10px] text-yellow-400/70 bg-yellow-500/10 border border-yellow-500/20 rounded-full px-2 py-0.5">
-                            🏆 {champ}
+                          <span className={`text-[10px] rounded-full px-2 py-0.5 border ${
+                            r.championHit
+                              ? "text-green-300 bg-green-500/15 border-green-500/30"
+                              : "text-yellow-400/70 bg-yellow-500/10 border-yellow-500/20"
+                          }`}>
+                            🏆 {champ}{r.championHit ? " +5" : ""}
                           </span>
                         )}
                       </div>

@@ -128,8 +128,6 @@ async function fetchApiSports() {
 
   const errStr = data.errors ? JSON.stringify(data.errors) : "none";
   const count = data.response?.length ?? 0;
-  const sample = count > 0 ? `${data.response[0].teams.home.name} vs ${data.response[0].teams.away.name}` : "none";
-  console.log(`[DIAG] key=${!!APISPORTS_KEY} results=${data.results ?? "?"} count=${count} errors=${errStr} sample="${sample}"`);
 
   if (errStr !== "none" && errStr !== "[]" && errStr !== "{}") throw new Error("api-sports returned errors");
   if (!count) throw new Error("api-sports returned 0 fixtures");
@@ -307,14 +305,15 @@ interface EspnEvent {
   }>;
 }
 
-function detectEspnStage(homeEn: string, awayEn: string): StageType {
-  const s = (homeEn + " " + awayEn).toLowerCase();
-  if (s.includes("semifinal") && s.includes("loser")) return "third";
-  if (s.includes("semifinal"))   return "final";
-  if (s.includes("quarterfinal")) return "sf";
-  if (s.includes("round of 16")) return "qf";
-  if (s.includes("round of 32")) return "r16";
-  if (s.includes("group") || s.includes("third place")) return "r32";
+// يحدد الدور من عنوان الملاحظة في ESPN (مثل "Round of 16", "Final")
+function detectEspnStage(headline: string): StageType {
+  const s = headline.toLowerCase();
+  if (s.includes("third") || s.includes("3rd")) return "third";
+  if (s.includes("round of 32")) return "r32";
+  if (s.includes("round of 16")) return "r16";
+  if (s.includes("quarter"))     return "qf";
+  if (s.includes("semi"))        return "sf";
+  if (s.includes("final"))       return "final";
   return "group";
 }
 
@@ -348,10 +347,8 @@ async function fetchESPN() {
     const home = comp?.competitors?.find((c) => c.homeAway === "home");
     const away = comp?.competitors?.find((c) => c.homeAway === "away");
 
-    const groupNote = comp?.notes?.find((n) =>
-      n.headline?.toLowerCase().includes("group")
-    );
-    const groupLetterMatch = groupNote?.headline?.match(/group\s+([A-L])/i);
+    const headline = comp?.notes?.find((n) => n.headline)?.headline ?? "";
+    const groupLetterMatch = headline.match(/group\s+([A-L])/i);
     const groupLetter = groupLetterMatch?.[1]?.toUpperCase() ?? "";
 
     const homeEn = home?.team?.displayName ?? "";
@@ -364,7 +361,7 @@ async function fetchESPN() {
     const awayScore = completed || live ? parseInt(away?.score ?? "") : null;
 
     const { date: matchDate, time: matchTime } = toSaudiTime(new Date(event.date));
-    const stage = detectEspnStage(homeEn, awayEn);
+    const stage = detectEspnStage(headline);
     // للمجموعات فقط نأخذ الحرف من الملاحظات
     const resolvedGroup = stage === "group" ? (groupLetter || undefined) : undefined;
 
@@ -426,14 +423,13 @@ export async function GET() {
 
   try {
     const matches = APISPORTS_KEY
-      ? await fetchApiSports().catch((err) => { console.error(`[DIAG] api-sports failed: ${err} → ESPN`); return fetchESPN(); })
+      ? await fetchApiSports().catch(() => fetchESPN())
       : FDORG_KEY
-      ? await fetchFDOrg().catch((err) => { console.error(`[DIAG] fdorg failed: ${err} → ESPN`); return fetchESPN(); })
+      ? await fetchFDOrg().catch(() => fetchESPN())
       : await fetchESPN();
     cache = { data: matches, ts: Date.now() };
     return NextResponse.json(matches);
-  } catch (err) {
-    console.error(`[DIAG] all sources failed: ${err}`);
+  } catch {
     if (cache) return NextResponse.json(cache.data);
     return NextResponse.json([], { status: 200 });
   }
