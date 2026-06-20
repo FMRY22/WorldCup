@@ -280,7 +280,7 @@ async function fetchFDOrg() {
 
 interface EspnCompetitor {
   homeAway: "home" | "away";
-  team: { displayName: string; shortDisplayName: string };
+  team: { id: string; displayName: string; shortDisplayName: string };
   score: string;
 }
 interface EspnEvent {
@@ -300,6 +300,7 @@ interface EspnEvent {
     details?: Array<{
       scoringPlay?: boolean;
       homeAway?: string;
+      team?: { id?: string };
       athletesInvolved?: Array<{ displayName: string }>;
       clock?: { displayValue?: string };
     }>;
@@ -372,14 +373,21 @@ async function fetchESPN() {
       ? (parseInt(displayClock.replace("+", "").split(":")[0]) || undefined)
       : undefined;
 
+    const homeTeamId = home?.team?.id ?? "";
     const details = comp?.details ?? [];
     const scorers = details
       .filter(d => d.scoringPlay)
-      .map(d => ({
-        name: d.athletesInvolved?.[0]?.displayName ?? "?",
-        minute: d.clock?.displayValue ? (parseInt(d.clock.displayValue) || undefined) : undefined,
-        team: (d.homeAway === "home" ? "home" : "away") as "home" | "away",
-      }));
+      .map(d => {
+        const scoringTeamId = d.team?.id;
+        const teamSide: "home" | "away" = scoringTeamId
+          ? (scoringTeamId === homeTeamId ? "home" : "away")
+          : (d.homeAway === "home" ? "home" : "away");
+        return {
+          name: d.athletesInvolved?.[0]?.displayName ?? "?",
+          minute: d.clock?.displayValue ? (parseInt(d.clock.displayValue) || undefined) : undefined,
+          team: teamSide,
+        };
+      });
 
     return {
       id: event.id,
