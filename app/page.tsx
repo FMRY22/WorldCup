@@ -42,6 +42,8 @@ function buildSectionsByDate(matches: Match[]) {
     }));
 }
 
+function predKey(m: Match) { return `${m.team1}|${m.team2}`; }
+
 function buildSectionsByGroup(matches: Match[]) {
   const grp: Record<string, Match[]> = {};
   const ko:  Record<string, Match[]> = {};
@@ -288,8 +290,9 @@ function MatchCard({ match, actual, allPreds, users }: {
   allPreds: AllPredictions;
   users: string[];
 }) {
+  const pk = predKey(match);
   const predsForMatch = users
-    .map(u => ({ user: u, pred: allPreds[u]?.[match.id] }))
+    .map(u => ({ user: u, pred: allPreds[u]?.[pk] }))
     .filter(x => x.pred?.t1 !== "" && x.pred?.t1 != null && x.pred?.t2 != null);
 
   const isLive = actual?.live;

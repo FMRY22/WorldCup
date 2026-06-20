@@ -17,6 +17,9 @@ interface ScheduleMatch extends Match {
   completed?: boolean;
 }
 
+// مفتاح ثابت للتوقع — لا يتغير بتغير الـ API
+function predKey(m: Match) { return `${m.team1}|${m.team2}`; }
+
 function fmtDayLabel(d: string) {
   const today    = new Date().toISOString().split("T")[0];
   const tomorrow = new Date(Date.now() + 86400000).toISOString().split("T")[0];
@@ -28,7 +31,7 @@ function fmtDayLabel(d: string) {
 }
 
 function isLocked(match: Match, results: AllResults) {
-  if (results[match.id]?.completed || results[match.id]?.live) return true;
+  if (results[predKey(match)]?.completed || results[predKey(match)]?.live) return true;
   return Date.now() > new Date(`${match.date}T${match.time}:00`).getTime();
 }
 
@@ -65,21 +68,14 @@ export default function PredictPage() {
       const r = await fetch("/api/schedule");
       const data: ScheduleMatch[] = await r.json();
       if (!Array.isArray(data) || !data.length) return;
-      // نستخدم الـ API للنتائج فقط — نطابق بأسماء الفرق لتجنب اختلاف الـ IDs
+      setMatches(data);
+      // استخرج النتائج وخزّنها بمفتاح أسماء الفرق
       const extracted: AllResults = {};
-      for (const api of data) {
-        if (!(api.completed || api.live) || api.score == null) continue;
-        const match = ALL_MATCHES.find(m =>
-          (m.team1 === api.team1 && m.team2 === api.team2) ||
-          (m.team1 === api.team2 && m.team2 === api.team1)
-        );
-        if (!match) continue;
-        const swapped = match.team1 === api.team2;
-        extracted[match.id] = {
-          t1: swapped ? api.score.away : api.score.home,
-          t2: swapped ? api.score.home : api.score.away,
-          completed: api.completed ?? false,
-          live: api.live ?? false,
+      for (const m of data) {
+        if (!(m.completed || m.live) || m.score == null) continue;
+        extracted[predKey(m)] = {
+          t1: m.score.home, t2: m.score.away,
+          completed: m.completed ?? false, live: m.live ?? false,
         };
       }
       if (Object.keys(extracted).length) setResults(p => ({ ...p, ...extracted }));
@@ -121,11 +117,11 @@ export default function PredictPage() {
     } catch {}
   };
 
-  const handleScore = (matchId: string, team: "t1" | "t2", val: string) => {
-    const m = matches.find(x => x.id === matchId);
-    if (!m || isLocked(m, results)) return;
+  const handleScore = (match: Match, team: "t1" | "t2", val: string) => {
+    if (isLocked(match, results)) return;
+    const key = predKey(match);
     const num = val === "" ? "" : Math.max(0, Math.min(30, parseInt(val) || 0));
-    setPreds(p => ({ ...p, [matchId]: { ...p[matchId], [team]: num } }));
+    setPreds(p => ({ ...p, [key]: { ...p[key], [team]: num } }));
   };
 
   const save = async () => {
@@ -204,7 +200,6 @@ export default function PredictPage() {
           {!isFirebaseConfigured && (
             <div className="mt-4 bg-orange-500/10 border border-orange-500/25 rounded-xl p-3 text-xs text-orange-300 text-center space-y-2">
               <p>⚠️ وضع تجريبي — التوقعات محفوظة محلياً فقط</p>
-              <p className="text-orange-300/60">لمشاركة التوقعات مع الآخرين، أعدّ Firebase أولاً</p>
               <Link href="/setup" className="inline-block bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/40 text-orange-300 rounded-lg px-3 py-1.5 transition-all">
                 📋 دليل الإعداد ←
               </Link>
@@ -220,7 +215,6 @@ export default function PredictPage() {
   return (
     <div className="min-h-screen">
 
-      {/* ── HEADER ──────────────────────────────────── */}
       <header className="sticky top-0 z-50 bg-[#07111f]/95 backdrop-blur border-b border-white/10">
         <div className="max-w-xl mx-auto px-4 py-3">
           <div className="flex items-center gap-3">
@@ -255,7 +249,6 @@ export default function PredictPage() {
             </button>
           </div>
 
-          {/* Progress bar */}
           <div className="mt-2 h-1 bg-white/10 rounded-full overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-yellow-600 to-yellow-400 rounded-full transition-all duration-500"
@@ -265,7 +258,6 @@ export default function PredictPage() {
         </div>
       </header>
 
-      {/* ── FILTER TABS ─────────────────────────────── */}
       <div className="max-w-xl mx-auto px-4 pt-3 pb-1">
         <div className="flex gap-2">
           {([
@@ -285,18 +277,12 @@ export default function PredictPage() {
         </div>
       </div>
 
-      {/* ── MATCH SECTIONS ──────────────────────────── */}
       <main className="max-w-xl mx-auto px-4 pb-28 pt-3 space-y-6">
-
         {filteredMatches.length === 0 && (
           <div className="text-center py-16">
-            <div className="text-5xl mb-3">
-              {predFilter === "upcoming" ? "✅" : "⏳"}
-            </div>
+            <div className="text-5xl mb-3">{predFilter === "upcoming" ? "✅" : "⏳"}</div>
             <p className="text-white/40 text-sm">
-              {predFilter === "upcoming"
-                ? "توقعت كل المباريات المتاحة!"
-                : "لا توجد مباريات مكتملة بعد"}
+              {predFilter === "upcoming" ? "توقعت كل المباريات المتاحة!" : "لا توجد مباريات مكتملة بعد"}
             </p>
           </div>
         )}
@@ -307,12 +293,12 @@ export default function PredictPage() {
             <div className="space-y-2.5">
               {sec.matches.map(m => (
                 <PredictCard
-                  key={m.id}
+                  key={predKey(m)}
                   match={m}
-                  pred={preds[m.id]}
-                  actual={results[m.id]}
+                  pred={preds[predKey(m)]}
+                  actual={results[predKey(m)]}
                   locked={isLocked(m, results)}
-                  onChange={(team, val) => handleScore(m.id, team, val)}
+                  onChange={(team, val) => handleScore(m, team, val)}
                 />
               ))}
             </div>
@@ -320,7 +306,6 @@ export default function PredictPage() {
         ))}
       </main>
 
-      {/* ── FLOATING SAVE ───────────────────────────── */}
       <div className="fixed bottom-6 left-0 right-0 flex justify-center z-40 pointer-events-none">
         <button
           onClick={save}
@@ -360,8 +345,6 @@ function PredictCard({ match, pred, actual, locked, onChange }: {
 
   return (
     <div className={`card p-4 transition-all ${borderColor}`}>
-
-      {/* Top: group + time + status */}
       <div className="flex items-center justify-between mb-3 text-[11px]">
         <span className="text-white/30">
           {match.groupName ? `${match.groupName} • ` : ""}{match.time}
@@ -385,7 +368,6 @@ function PredictCard({ match, pred, actual, locked, onChange }: {
         </div>
       </div>
 
-      {/* Teams + inputs */}
       <div className="flex items-center gap-3">
         <div className="flex-1 text-center">
           <div className="text-3xl mb-1">{match.flag1}</div>
