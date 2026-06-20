@@ -102,7 +102,11 @@ export default function HomePage() {
       return;
     }
     return onSnapshot(doc(db, "rooms", ROOM_ID), snap => {
-      if (!snap.exists()) return;
+      if (!snap.exists()) {
+        // Firebase فارغ — اقرأ من الجهاز مؤقتاً
+        try { setAllPreds(JSON.parse(localStorage.getItem("wc2026_preds") || "{}")); } catch {}
+        return;
+      }
       const d = snap.data();
       if (d.predictions) setAllPreds(d.predictions);
       if (d.results)     setResults(p => ({ ...p, ...d.results }));

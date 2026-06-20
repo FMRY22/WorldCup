@@ -56,7 +56,22 @@ export default function PredictPage() {
   const [saving,     setSaving]     = useState(false);
   const [saved,      setSaved]      = useState(false);
   const [predFilter, setPredFilter] = useState<"upcoming"|"done"|"all">("upcoming");
-  const fetchRef = useRef(false);
+  const fetchRef  = useRef(false);
+  const syncedRef = useRef(false);
+
+  // مزامنة تلقائية: إذا عند المستخدم توقعات محفوظة محلياً، ارفعها لـ Firebase
+  useEffect(() => {
+    if (!isFirebaseConfigured || !db || syncedRef.current) return;
+    syncedRef.current = true;
+    const all = (() => { try { return JSON.parse(localStorage.getItem("wc2026_preds") || "{}"); } catch { return {}; } })();
+    if (Object.keys(all).length === 0) return;
+    const ref = doc(db, "rooms", ROOM_ID);
+    getDoc(ref).then(snap => {
+      const existing = snap.exists() ? (snap.data().predictions || {}) : {};
+      const merged = { ...all, ...existing };
+      return setDoc(ref, { predictions: merged }, { merge: true });
+    }).catch(console.error);
+  }, []);
 
   const loadSchedule = useCallback(async () => {
     if (fetchRef.current) return;
