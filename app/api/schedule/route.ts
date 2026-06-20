@@ -94,13 +94,63 @@ function parseApiSportsStage(round: string): StageType {
   return "group";
 }
 
+async function fetchApiSportsEvents(fixtureId: number): Promise<ApiSportsFixture["events"]> {
+  try {
+    const res = await fetch(
+      `https://v3.football.api-sports.io/fixtures/events?fixture=${fixtureId}`,
+      { headers: { "x-apisports-key": APISPORTS_KEY! }, cache: "no-store" }
+    );
+    if (!res.ok) return [];
+    const data = (await res.json()) as {
+      response: Array<{
+        time: { elapsed: number; extra: number | null };
+        team: { id: number; name: string };
+        player: { id: number; name: string };
+        type: string;
+        detail: string;
+      }>;
+    };
+    return data.response;
+  } catch {
+    return [];
+  }
+}
+
 async function fetchApiSports() {
   const res = await fetch(APISPORTS_URL, {
     headers: { "x-apisports-key": APISPORTS_KEY! },
     cache: "no-store",
   });
   if (!res.ok) throw new Error(`api-sports ${res.status}`);
-  const data = (await res.json()) as { response: ApiSportsFixture[] };
+  const data = (await res.json()) as { response: ApiSportsFixture[]; errors?: unknown };
+
+  if (data.errors && Object.keys(data.errors as object).length > 0) {
+    console.error("api-sports error:", JSON.stringify(data.errors));
+    throw new Error("api-sports returned errors");
+  }
+  console.log(`[api-sports] fixtures: ${data.response?.length ?? 0}`);
+  if (data.response?.length > 0) {
+    const f0 = data.response[0];
+    console.log(`[api-sports] sample: ${f0.teams.home.name} vs ${f0.teams.away.name} | round: ${f0.league.round} | group: ${f0.league.group}`);
+  }
+  if (!data.response?.length) throw new Error("api-sports returned 0 fixtures");
+
+  const todaySaudi = toSaudiTime(new Date()).date;
+
+  // جلب events فقط لمباريات اليوم المنتهية أو المباشرة (توفيراً للطلبات)
+  const todayActive = data.response.filter(f => {
+    const short = f.fixture.status.short;
+    const { date } = toSaudiTime(new Date(f.fixture.date));
+    return date === todaySaudi && (LIVE_STATUSES.has(short) || DONE_STATUSES.has(short));
+  });
+
+  const eventsMap = new Map<number, NonNullable<ApiSportsFixture["events"]>>();
+  await Promise.all(
+    todayActive.map(async f => {
+      const events = await fetchApiSportsEvents(f.fixture.id);
+      eventsMap.set(f.fixture.id, events ?? []);
+    })
+  );
 
   return data.response.map((f) => {
     const short = f.fixture.status.short;
@@ -118,7 +168,8 @@ async function fetchApiSports() {
     const homeScore = (live || finished) ? (f.goals.home ?? null) : null;
     const awayScore = (live || finished) ? (f.goals.away ?? null) : null;
 
-    const scorers = (f.events ?? [])
+    const events = eventsMap.get(f.fixture.id) ?? [];
+    const scorers = events
       .filter(e => e.type === "Goal")
       .map(e => ({
         name: e.detail === "Own Goal" ? "Own Goal" : e.player.name,
