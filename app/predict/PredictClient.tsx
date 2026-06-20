@@ -128,6 +128,8 @@ export default function PredictClient() {
     const all = lsGet<Record<string, MyPredictions>>("wc2026_preds", {});
     all[user] = preds;
     localStorage.setItem("wc2026_preds", JSON.stringify(all));
+    // sync للصفحة الرئيسية — تظهر توقعاتك فوراً بدون Firebase
+    try { localStorage.setItem("wc2026_allpreds", JSON.stringify(all)); } catch {}
 
     if (isFirebaseConfigured && db) {
       try {

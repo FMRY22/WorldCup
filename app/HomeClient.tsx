@@ -71,10 +71,27 @@ export default function HomeClient() {
     const p = lsGet<Match[]>("wc2026_schedule", []);
     return p.length ? p : ALL_MATCHES;
   });
-  const [allPreds, setAllPreds] = useState<AllPredictions>(() =>
-    lsGet<AllPredictions>("wc2026_allpreds", {})
-  );
-  const [results,  setResults]  = useState<AllResults>({});
+  const [allPreds, setAllPreds] = useState<AllPredictions>(() => {
+    // wc2026_allpreds = كاش Firebase (كل المستخدمين)
+    // wc2026_preds    = توقعات هذا الجهاز (fallback)
+    const full = lsGet<AllPredictions>("wc2026_allpreds", {});
+    return Object.keys(full).length ? full : lsGet<AllPredictions>("wc2026_preds", {});
+  });
+  const [results, setResults] = useState<AllResults>(() => {
+    // استخرج النتائج من كاش الجدول مباشرة
+    try {
+      const cached = lsGet<ScheduleMatch[]>("wc2026_schedule", []);
+      const r: AllResults = {};
+      for (const m of cached) {
+        if (!((m.completed || m.live) && m.score)) continue;
+        r[`${m.team1}|${m.team2}`] = {
+          t1: m.score.home, t2: m.score.away,
+          completed: !!m.completed, live: !!m.live,
+        };
+      }
+      return r;
+    } catch { return {}; }
+  });
   const [status,   setStatus]   = useState<"loading"|"ok"|"fallback">("loading");
   const [updated,  setUpdated]  = useState<Date|null>(null);
   const [filter,   setFilter]   = useState<"today"|"upcoming"|"live"|"done"|"groups">("today");
