@@ -119,24 +119,20 @@ async function fetchApiSportsEvents(fixtureId: number): Promise<ApiSportsFixture
 }
 
 async function fetchApiSports() {
-  console.log(`[api-sports] key set: ${!!APISPORTS_KEY}, length: ${APISPORTS_KEY?.length ?? 0}`);
   const res = await fetch(APISPORTS_URL, {
     headers: { "x-apisports-key": APISPORTS_KEY! },
     cache: "no-store",
   });
-  if (!res.ok) throw new Error(`api-sports ${res.status}`);
-  const data = (await res.json()) as { response: ApiSportsFixture[]; errors?: unknown };
+  if (!res.ok) throw new Error(`api-sports HTTP ${res.status}`);
+  const data = (await res.json()) as { response: ApiSportsFixture[]; errors?: unknown; results?: number };
 
-  if (data.errors && Object.keys(data.errors as object).length > 0) {
-    console.error("api-sports error:", JSON.stringify(data.errors));
-    throw new Error("api-sports returned errors");
-  }
-  console.log(`[api-sports] fixtures: ${data.response?.length ?? 0}`);
-  if (data.response?.length > 0) {
-    const f0 = data.response[0];
-    console.log(`[api-sports] sample: ${f0.teams.home.name} vs ${f0.teams.away.name} | round: ${f0.league.round} | group: ${f0.league.group}`);
-  }
-  if (!data.response?.length) throw new Error("api-sports returned 0 fixtures");
+  const errStr = data.errors ? JSON.stringify(data.errors) : "none";
+  const count = data.response?.length ?? 0;
+  const sample = count > 0 ? `${data.response[0].teams.home.name} vs ${data.response[0].teams.away.name}` : "none";
+  console.log(`[DIAG] key=${!!APISPORTS_KEY} results=${data.results ?? "?"} count=${count} errors=${errStr} sample="${sample}"`);
+
+  if (errStr !== "none" && errStr !== "[]" && errStr !== "{}") throw new Error("api-sports returned errors");
+  if (!count) throw new Error("api-sports returned 0 fixtures");
 
   const todaySaudi = toSaudiTime(new Date()).date;
 
@@ -429,7 +425,7 @@ export async function GET() {
     cache = { data: matches, ts: Date.now() };
     return NextResponse.json(matches);
   } catch (err) {
-    console.error("Schedule fetch failed:", err);
+    console.error(`[DIAG] fetch failed: ${err}`);
     if (cache) return NextResponse.json(cache.data);
     return NextResponse.json([], { status: 200 });
   }
