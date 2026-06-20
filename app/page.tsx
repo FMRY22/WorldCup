@@ -18,21 +18,36 @@ interface ScheduleMatch extends Match {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-function fmt(d: string) {
+function fmtDayLabel(d: string) {
+  const today    = new Date().toISOString().split("T")[0];
+  const tomorrow = new Date(Date.now() + 86400000).toISOString().split("T")[0];
+  if (d === today)    return "اليوم";
+  if (d === tomorrow) return "غداً";
   return new Date(d + "T12:00:00").toLocaleDateString("ar-SA", {
-    weekday: "short", day: "numeric", month: "short",
+    weekday: "long", day: "numeric", month: "long",
   });
 }
 
-function buildSections(matches: Match[]) {
+function buildSectionsByDate(matches: Match[]) {
+  const byDate: Record<string, Match[]> = {};
+  for (const m of matches) {
+    (byDate[m.date] ??= []).push(m);
+  }
+  return Object.entries(byDate)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, ms]) => ({
+      key: `d-${date}`,
+      label: fmtDayLabel(date),
+      matches: ms.sort((a, b) => a.time.localeCompare(b.time)),
+    }));
+}
+
+function buildSectionsByGroup(matches: Match[]) {
   const grp: Record<string, Match[]> = {};
   const ko:  Record<string, Match[]> = {};
   for (const m of matches) {
-    if (m.stage === "group") {
-      (grp[m.group!] ??= []).push(m);
-    } else {
-      (ko[m.stage] ??= []).push(m);
-    }
+    if (m.stage === "group") (grp[m.group!] ??= []).push(m);
+    else                     (ko[m.stage]   ??= []).push(m);
   }
   const out: { key: string; label: string; matches: Match[] }[] = [];
   for (const [g, ms] of Object.entries(grp))
@@ -50,7 +65,7 @@ export default function HomePage() {
   const [results,  setResults]  = useState<AllResults>({});
   const [status,   setStatus]   = useState<"loading"|"ok"|"fallback">("loading");
   const [updated,  setUpdated]  = useState<Date|null>(null);
-  const [filter,   setFilter]   = useState<"all"|"live"|"today"|"done">("all");
+  const [filter,   setFilter]   = useState<"today"|"upcoming"|"live"|"done"|"groups">("today");
 
   // ── Schedule + live scores ─────────────────────────
   const refresh = useCallback(async () => {
@@ -106,12 +121,16 @@ export default function HomePage() {
   const MEDALS     = ["🥇", "🥈", "🥉"];
 
   const visible = matches.filter(m => {
-    if (filter === "live")  return results[m.id]?.live;
-    if (filter === "done")  return results[m.id]?.completed;
-    if (filter === "today") return m.date === today;
+    if (filter === "live")     return results[m.id]?.live;
+    if (filter === "done")     return results[m.id]?.completed;
+    if (filter === "today")    return m.date === today;
+    if (filter === "upcoming") return !results[m.id]?.completed && !results[m.id]?.live;
     return true;
   });
-  const sections = buildSections(visible);
+
+  const sections = filter === "groups"
+    ? buildSectionsByGroup(visible)
+    : buildSectionsByDate(visible);
 
   // ─────────────────────────────────────────────────────────────────────────────
   return (
@@ -137,7 +156,7 @@ export default function HomePage() {
             </div>
           </div>
           <Link href="/predict" className="btn-primary text-sm whitespace-nowrap flex-shrink-0">
-            أدخل توقعاتي ←
+            توقعاتي ←
           </Link>
         </div>
       </nav>
@@ -161,9 +180,7 @@ export default function HomePage() {
                       {MEDALS[i] ?? <span className="text-sm text-white/30 font-bold">{i + 1}</span>}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-sm truncate">{r.user}</span>
-                      </div>
+                      <span className="font-bold text-sm truncate">{r.user}</span>
                       <div className="flex items-center gap-2 mt-1">
                         <div className="h-1.5 flex-1 bg-white/10 rounded-full overflow-hidden">
                           <div
@@ -184,7 +201,7 @@ export default function HomePage() {
 
         {/* ── EMPTY STATE ─────────────────────────────────────── */}
         {ranked.length === 0 && (
-          <div className="text-center py-16 fade-up">
+          <div className="text-center py-12 fade-up">
             <div className="text-6xl mb-4">⚽</div>
             <h2 className="text-xl font-black text-white mb-2">ابدأ التوقعات</h2>
             <p className="text-white/40 mb-6 text-sm">كن أول من يدخل توقعاته</p>
@@ -195,29 +212,34 @@ export default function HomePage() {
         )}
 
         {/* ── FILTERS ─────────────────────────────────────────── */}
-        {matches.length > 0 && (
-          <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-            {([
-              { k: "all",   label: "الكل" },
-              { k: "live",  label: `🔴 مباشر${liveN ? ` (${liveN})` : ""}` },
-              { k: "today", label: "اليوم" },
-              { k: "done",  label: `✅ مكتملة (${completedN})` },
-            ] as const).map(f => (
-              <button key={f.k} onClick={() => setFilter(f.k)}
-                className={`flex-shrink-0 text-xs px-4 py-2 rounded-full border transition-all ${
-                  filter === f.k
-                    ? "bg-yellow-500 border-yellow-500 text-black font-black"
-                    : "border-white/15 text-white/45 hover:border-white/35"
-                }`}>
-                {f.label}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+          {([
+            { k: "today",    label: "📅 اليوم" },
+            { k: "upcoming", label: "⏳ القادمة" },
+            { k: "live",     label: `🔴 مباشر${liveN ? ` (${liveN})` : ""}` },
+            { k: "done",     label: `✅ مكتملة (${completedN})` },
+            { k: "groups",   label: "🗂 المجموعات" },
+          ] as const).map(f => (
+            <button key={f.k} onClick={() => setFilter(f.k)}
+              className={`flex-shrink-0 text-xs px-4 py-2 rounded-full border transition-all ${
+                filter === f.k
+                  ? "bg-yellow-500 border-yellow-500 text-black font-black"
+                  : "border-white/15 text-white/45 hover:border-white/35"
+              }`}>
+              {f.label}
+            </button>
+          ))}
+        </div>
 
         {/* ── MATCH SECTIONS ──────────────────────────────────── */}
-        {visible.length === 0 && filter !== "all" && (
-          <div className="text-center py-10 text-white/30 text-sm">لا توجد مباريات في هذه الفئة الآن</div>
+        {visible.length === 0 && (
+          <div className="text-center py-10 text-white/30 text-sm">
+            {filter === "today"    && "لا توجد مباريات اليوم"}
+            {filter === "live"     && "لا توجد مباريات مباشرة الآن"}
+            {filter === "done"     && "لا توجد مباريات مكتملة بعد"}
+            {filter === "upcoming" && "لا توجد مباريات قادمة"}
+            {filter === "groups"   && "لا توجد مباريات"}
+          </div>
         )}
 
         {sections.map(sec => (
@@ -231,7 +253,6 @@ export default function HomePage() {
           </div>
         ))}
 
-        {/* Footer */}
         {!isFirebaseConfigured && (
           <div className="text-center pt-4 pb-2 fade-up">
             <Link href="/setup"
@@ -266,12 +287,11 @@ function MatchCard({ match, actual, allPreds, users }: {
       isLive ? "border-red-500/40 live-glow" : isDone ? "border-green-500/10" : "border-white/8"
     }`}>
 
-      {/* Match body */}
       <div className="p-4">
-        {/* Top: date + status */}
+        {/* Top: group + time + status */}
         <div className="flex items-center justify-between mb-4 text-[11px]">
           <span className="text-white/30">
-            {match.groupName ? `${match.groupName} ` : ""}{fmt(match.date)} {match.time}
+            {match.groupName ? `${match.groupName} • ` : ""}{match.time}
             {match.venue ? ` • ${match.venue}` : ""}
           </span>
           {isLive ? (
@@ -285,13 +305,11 @@ function MatchCard({ match, actual, allPreds, users }: {
 
         {/* Teams + score */}
         <div className="flex items-center gap-2">
-          {/* Team 1 */}
           <div className="flex-1 text-center">
             <div className="text-4xl mb-1.5">{match.flag1}</div>
             <div className="text-xs font-bold text-white/80 leading-snug">{match.team1}</div>
           </div>
 
-          {/* Middle: score or vs */}
           <div className="flex-shrink-0 text-center w-24">
             {(isDone || isLive) && actual ? (
               <div className={`font-black text-3xl leading-none ${isLive ? "text-red-400" : "text-white"}`}>
@@ -303,7 +321,6 @@ function MatchCard({ match, actual, allPreds, users }: {
             <div className="text-[10px] text-white/20 mt-1.5">{match.time}</div>
           </div>
 
-          {/* Team 2 */}
           <div className="flex-1 text-center">
             <div className="text-4xl mb-1.5">{match.flag2}</div>
             <div className="text-xs font-bold text-white/80 leading-snug">{match.team2}</div>
@@ -338,10 +355,9 @@ function MatchCard({ match, actual, allPreds, users }: {
         </div>
       )}
 
-      {/* No predictions */}
       {predsForMatch.length === 0 && users.length > 0 && (
         <div className="border-t border-white/5 px-4 py-2 text-[11px] text-white/15 text-center">
-          لا توقعات لهذه المباراة بعد —{" "}
+          لا توقعات لهذه المباراة —{" "}
           <Link href="/predict" className="text-yellow-500/60 hover:text-yellow-400 underline underline-offset-2">
             أدخل توقعك
           </Link>

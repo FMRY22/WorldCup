@@ -4,12 +4,12 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { doc, getDoc, setDoc, onSnapshot, serverTimestamp } from "firebase/firestore";
 import Link from "next/link";
 import { db, isFirebaseConfigured, ROOM_ID } from "@/lib/firebase";
-import { ALL_MATCHES, STAGE_LABELS, type Match } from "@/lib/matches";
+import { ALL_MATCHES, type Match } from "@/lib/matches";
 import { calcPoints, type Prediction, type ActualResult } from "@/lib/scoring";
 import { PARTICIPANTS } from "@/lib/config";
 
-type MyPredictions  = Record<string, Prediction>;
-type AllResults     = Record<string, ActualResult>;
+type MyPredictions = Record<string, Prediction>;
+type AllResults    = Record<string, ActualResult>;
 
 interface ScheduleMatch extends Match {
   score?: { home: number; away: number } | null;
@@ -17,9 +17,13 @@ interface ScheduleMatch extends Match {
   completed?: boolean;
 }
 
-function fmt(d: string) {
+function fmtDayLabel(d: string) {
+  const today    = new Date().toISOString().split("T")[0];
+  const tomorrow = new Date(Date.now() + 86400000).toISOString().split("T")[0];
+  if (d === today)    return "اليوم";
+  if (d === tomorrow) return "غداً";
   return new Date(d + "T12:00:00").toLocaleDateString("ar-SA", {
-    weekday: "short", day: "numeric", month: "short",
+    weekday: "long", day: "numeric", month: "long",
   });
 }
 
@@ -28,33 +32,32 @@ function isLocked(match: Match, results: AllResults) {
   return Date.now() > new Date(`${match.date}T${match.time}:00`).getTime();
 }
 
-function buildSections(matches: Match[]) {
-  const grp: Record<string, Match[]> = {};
-  const ko:  Record<string, Match[]> = {};
+function buildSectionsByDate(matches: Match[]) {
+  const byDate: Record<string, Match[]> = {};
   for (const m of matches) {
-    if (m.stage === "group") (grp[m.group!] ??= []).push(m);
-    else                     (ko[m.stage]   ??= []).push(m);
+    (byDate[m.date] ??= []).push(m);
   }
-  const out: { key: string; label: string; matches: Match[] }[] = [];
-  for (const [g, ms] of Object.entries(grp))
-    out.push({ key: `g-${g}`, label: ms[0].groupName ?? `المجموعة ${g}`, matches: ms });
-  for (const s of ["r32","r16","qf","sf","third","final"] as const)
-    if (ko[s]) out.push({ key: s, label: STAGE_LABELS[s], matches: ko[s] });
-  return out;
+  return Object.entries(byDate)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, ms]) => ({
+      key: `d-${date}`,
+      label: fmtDayLabel(date),
+      matches: ms.sort((a, b) => a.time.localeCompare(b.time)),
+    }));
 }
 
 // ── PredictPage ───────────────────────────────────────────────────────────────
 
 export default function PredictPage() {
-  const [user,    setUser]    = useState("");
-  const [preds,   setPreds]   = useState<MyPredictions>({});
-  const [results, setResults] = useState<AllResults>({});
-  const [matches, setMatches] = useState<Match[]>(ALL_MATCHES);
-  const [saving,  setSaving]  = useState(false);
-  const [saved,   setSaved]   = useState(false);
+  const [user,       setUser]       = useState("");
+  const [preds,      setPreds]      = useState<MyPredictions>({});
+  const [results,    setResults]    = useState<AllResults>({});
+  const [matches,    setMatches]    = useState<Match[]>(ALL_MATCHES);
+  const [saving,     setSaving]     = useState(false);
+  const [saved,      setSaved]      = useState(false);
+  const [predFilter, setPredFilter] = useState<"upcoming"|"done"|"all">("upcoming");
   const fetchRef = useRef(false);
 
-  // Load schedule
   const loadSchedule = useCallback(async () => {
     if (fetchRef.current) return;
     fetchRef.current = true;
@@ -77,19 +80,17 @@ export default function PredictPage() {
 
   useEffect(() => { loadSchedule(); }, [loadSchedule]);
 
-  // Restore user + preds from localStorage
   useEffect(() => {
-    const saved = localStorage.getItem("wc2026_user");
-    if (saved) {
-      setUser(saved);
+    const savedUser = localStorage.getItem("wc2026_user");
+    if (savedUser) {
+      setUser(savedUser);
       try {
         const all = JSON.parse(localStorage.getItem("wc2026_preds") || "{}");
-        setPreds(all[saved] || {});
+        setPreds(all[savedUser] || {});
       } catch {}
     }
   }, []);
 
-  // Firebase listener (results only)
   useEffect(() => {
     if (!isFirebaseConfigured || !db) return;
     return onSnapshot(doc(db, "rooms", ROOM_ID), snap => {
@@ -120,12 +121,10 @@ export default function PredictPage() {
   const save = async () => {
     if (!user) return;
     setSaving(true);
-    // localStorage
     const all = (() => { try { return JSON.parse(localStorage.getItem("wc2026_preds") || "{}"); } catch { return {}; } })();
     all[user] = preds;
     localStorage.setItem("wc2026_preds", JSON.stringify(all));
 
-    // Firebase
     if (isFirebaseConfigured && db) {
       try {
         const ref  = doc(db, "rooms", ROOM_ID);
@@ -145,10 +144,18 @@ export default function PredictPage() {
 
   // ── Derived ────────────────────────────────────────
 
-  const sections  = buildSections(matches);
   const total     = matches.length;
   const predicted = Object.values(preds).filter(p => p?.t1 !== "" && p?.t1 != null).length;
-  const locked    = matches.filter(m => isLocked(m, results)).length;
+  const lockedN   = matches.filter(m => isLocked(m, results)).length;
+  const upcomingN = total - lockedN;
+
+  const filteredMatches = matches.filter(m => {
+    if (predFilter === "upcoming") return !isLocked(m, results);
+    if (predFilter === "done")     return isLocked(m, results);
+    return true;
+  });
+
+  const sections = buildSectionsByDate(filteredMatches);
 
   // ── Name selector ──────────────────────────────────
 
@@ -156,7 +163,6 @@ export default function PredictPage() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-4">
         <div className="w-full max-w-sm">
-          {/* Back */}
           <Link href="/" className="text-white/30 hover:text-white text-sm mb-8 flex items-center gap-1 transition">
             ← الصفحة الرئيسية
           </Link>
@@ -222,7 +228,7 @@ export default function PredictPage() {
                 </button>
               </div>
               <div className="text-[10px] text-white/35 mt-0.5">
-                {predicted}/{total} توقع • {locked} مقفلة
+                {predicted}/{total} توقع • {upcomingN} متاحة للتوقع
               </div>
             </div>
 
@@ -243,32 +249,50 @@ export default function PredictPage() {
           <div className="mt-2 h-1 bg-white/10 rounded-full overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-yellow-600 to-yellow-400 rounded-full transition-all duration-500"
-              style={{ width: `${(predicted / total) * 100}%` }}
+              style={{ width: `${total > 0 ? (predicted / total) * 100 : 0}%` }}
             />
           </div>
         </div>
       </header>
 
-      {/* ── GROUP TABS ──────────────────────────────── */}
-      <div className="max-w-xl mx-auto px-4 pt-3">
-        <div className="flex gap-2 overflow-x-auto pb-2" style={{ scrollbarWidth: "none" }}>
-          {sections.map(s => (
-            <button
-              key={s.key}
-              onClick={() => document.getElementById(s.key)?.scrollIntoView({ behavior: "smooth", block: "start" })}
-              className="flex-shrink-0 text-xs px-3 py-1.5 rounded-full border border-white/15
-                         text-white/45 hover:border-yellow-500/40 hover:text-yellow-400 transition"
-            >
-              {s.label}
+      {/* ── FILTER TABS ─────────────────────────────── */}
+      <div className="max-w-xl mx-auto px-4 pt-3 pb-1">
+        <div className="flex gap-2">
+          {([
+            { k: "upcoming", label: `⏳ متاح (${upcomingN})` },
+            { k: "done",     label: `✅ مكتملة (${lockedN})` },
+            { k: "all",      label: "الكل" },
+          ] as const).map(f => (
+            <button key={f.k} onClick={() => setPredFilter(f.k)}
+              className={`flex-shrink-0 text-xs px-4 py-2 rounded-full border transition-all ${
+                predFilter === f.k
+                  ? "bg-yellow-500 border-yellow-500 text-black font-black"
+                  : "border-white/15 text-white/45 hover:border-white/35"
+              }`}>
+              {f.label}
             </button>
           ))}
         </div>
       </div>
 
       {/* ── MATCH SECTIONS ──────────────────────────── */}
-      <main className="max-w-xl mx-auto px-4 pb-28 pt-2 space-y-6">
+      <main className="max-w-xl mx-auto px-4 pb-28 pt-3 space-y-6">
+
+        {filteredMatches.length === 0 && (
+          <div className="text-center py-16">
+            <div className="text-5xl mb-3">
+              {predFilter === "upcoming" ? "✅" : "⏳"}
+            </div>
+            <p className="text-white/40 text-sm">
+              {predFilter === "upcoming"
+                ? "توقعت كل المباريات المتاحة!"
+                : "لا توجد مباريات مكتملة بعد"}
+            </p>
+          </div>
+        )}
+
         {sections.map(sec => (
-          <div key={sec.key} id={sec.key}>
+          <div key={sec.key}>
             <div className="section-title"><span>{sec.label}</span></div>
             <div className="space-y-2.5">
               {sec.matches.map(m => (
@@ -327,10 +351,10 @@ function PredictCard({ match, pred, actual, locked, onChange }: {
   return (
     <div className={`card p-4 transition-all ${borderColor}`}>
 
-      {/* Top: date + status */}
+      {/* Top: group + time + status */}
       <div className="flex items-center justify-between mb-3 text-[11px]">
         <span className="text-white/30">
-          {fmt(match.date)} • {match.time}
+          {match.groupName ? `${match.groupName} • ` : ""}{match.time}
           {match.venue ? ` • ${match.venue}` : ""}
         </span>
         <div className="flex items-center gap-2">
@@ -353,15 +377,12 @@ function PredictCard({ match, pred, actual, locked, onChange }: {
 
       {/* Teams + inputs */}
       <div className="flex items-center gap-3">
-        {/* Team 1 */}
         <div className="flex-1 text-center">
           <div className="text-3xl mb-1">{match.flag1}</div>
           <div className="text-xs font-bold text-white/80 leading-snug">{match.team1}</div>
         </div>
 
-        {/* Score inputs + actual */}
         <div className="flex-shrink-0 flex flex-col items-center gap-1.5">
-          {/* Actual result (if available) */}
           {actual && (actual.completed || actual.live) && (
             <div className={`font-black text-sm px-3 py-1 rounded-lg ${
               actual.live ? "bg-red-500/20 text-red-300" : "bg-white/10 text-white"
@@ -369,7 +390,6 @@ function PredictCard({ match, pred, actual, locked, onChange }: {
               {actual.t1} : {actual.t2}
             </div>
           )}
-          {/* Inputs */}
           <div className="flex items-center gap-2">
             <input
               type="number" min="0" max="30"
@@ -392,7 +412,6 @@ function PredictCard({ match, pred, actual, locked, onChange }: {
           <span className="text-[10px] text-white/20">توقعك</span>
         </div>
 
-        {/* Team 2 */}
         <div className="flex-1 text-center">
           <div className="text-3xl mb-1">{match.flag2}</div>
           <div className="text-xs font-bold text-white/80 leading-snug">{match.team2}</div>
