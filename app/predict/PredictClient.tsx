@@ -15,10 +15,19 @@ interface ScheduleMatch extends Match {
   score?: { home: number; away: number } | null;
   live?: boolean;
   completed?: boolean;
+  minute?: number;
+  scorers?: { name: string; minute?: number; team: "home" | "away" }[];
 }
 
 function predKey(m: Match) { return `${m.team1}|${m.team2}`; }
 function saudiNow() { return Date.now() + 3 * 60 * 60 * 1000; }
+
+function fmtTime(time: string): string {
+  const [h, m] = time.split(":").map(Number);
+  const period = h >= 12 ? "م" : "ص";
+  const h12 = h % 12 || 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${period}`;
+}
 
 function fmtDayLabel(d: string) {
   const now      = saudiNow();
@@ -26,9 +35,9 @@ function fmtDayLabel(d: string) {
   const tomorrow = new Date(now + 86400000).toISOString().split("T")[0];
   if (d === today)    return "اليوم";
   if (d === tomorrow) return "غداً";
-  return new Date(d + "T12:00:00").toLocaleDateString("ar-SA", {
-    weekday: "long", day: "numeric", month: "long",
-  });
+  return new Intl.DateTimeFormat("ar", {
+    calendar: "gregory", weekday: "long", day: "numeric", month: "long",
+  }).format(new Date(d + "T12:00:00"));
 }
 
 function isLocked(match: Match, results: AllResults) {
@@ -157,8 +166,8 @@ export default function PredictClient() {
     if (!u) return {};
     return lsGet<Record<string, MyPredictions>>("wc2026_preds", {})[u] || {};
   });
-  const [matches, setMatches] = useState<Match[]>(() => {
-    const p = lsGet<Match[]>("wc2026_schedule", []);
+  const [matches, setMatches] = useState<ScheduleMatch[]>(() => {
+    const p = lsGet<ScheduleMatch[]>("wc2026_schedule", []);
     return p.length ? p : ALL_MATCHES;
   });
   const [results,    setResults]    = useState<AllResults>({});
@@ -470,11 +479,13 @@ function PredictCard({ match, pred, actual, locked, onChange }: {
 
   return (
     <div className={`card p-4 transition-all ${borderColor}`}>
-      <div className="flex items-center justify-between mb-3 text-[11px]">
-        <span className="text-white/30">
-          {match.groupName ? `${match.groupName} • ` : ""}{match.time}
-          {match.venue ? ` • ${match.venue}` : ""}
-        </span>
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <div className="text-sm font-black text-white/90">{fmtTime(match.time)}</div>
+          <div className="text-[10px] text-white/30 mt-0.5">
+            {match.groupName ?? ""}{match.venue ? ` • ${match.venue}` : ""}
+          </div>
+        </div>
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
           {!locked && <CountdownBadge match={match} />}
           {actual?.live      && <span className="badge-live animate-pulse">🔴 مباشر</span>}
@@ -505,7 +516,7 @@ function PredictCard({ match, pred, actual, locked, onChange }: {
             <div className={`font-black text-sm px-3 py-1 rounded-lg ${
               actual.live ? "bg-red-500/20 text-red-300" : "bg-white/10 text-white"
             }`}>
-              {actual.t1} : {actual.t2}
+              {actual.t2} : {actual.t1}
             </div>
           )}
           <div className="flex items-center gap-2">

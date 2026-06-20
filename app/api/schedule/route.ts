@@ -54,6 +54,12 @@ function toSaudiTime(utcDate: Date): { date: string; time: string } {
 // ── football-data.org ─────────────────────────────────────────────────────────
 
 interface FdorgTeam { name: string; shortName: string }
+interface FdorgGoal {
+  minute: number | null;
+  type: string;
+  team: { name: string };
+  scorer: { name: string | null };
+}
 interface FdorgMatch {
   id: number;
   utcDate: string;
@@ -64,6 +70,8 @@ interface FdorgMatch {
   homeTeam: FdorgTeam;
   awayTeam: FdorgTeam;
   score: { fullTime: { home: number | null; away: number | null } };
+  goals?: FdorgGoal[];
+  minute?: number | null;
   venue?: string;
 }
 
@@ -88,6 +96,12 @@ async function fetchFDOrg() {
     const finished = m.status === "FINISHED";
     const live = m.status === "IN_PLAY" || m.status === "PAUSED";
 
+    const goals = m.goals?.map(g => ({
+      name: g.scorer?.name ?? "?",
+      minute: g.minute ?? undefined,
+      team: g.team.name === (m.homeTeam.name || m.homeTeam.shortName) ? "home" as const : "away" as const,
+    })) ?? [];
+
     return {
       id: String(m.id),
       stage,
@@ -108,6 +122,8 @@ async function fetchFDOrg() {
           : null,
       live,
       completed: finished,
+      minute: live ? (m.minute ?? undefined) : undefined,
+      scorers: (finished || live) ? goals : [],
     };
   });
 }
@@ -122,11 +138,23 @@ interface EspnCompetitor {
 interface EspnEvent {
   id: string;
   date: string;
-  status: { type: { completed: boolean; state: string } };
+  status: {
+    type: {
+      completed: boolean;
+      state: string;
+      displayClock?: string;
+    };
+  };
   competitions: Array<{
     competitors: EspnCompetitor[];
     notes: Array<{ headline?: string }>;
     venue?: { fullName: string };
+    details?: Array<{
+      scoringPlay?: boolean;
+      homeAway?: string;
+      athletesInvolved?: Array<{ displayName: string }>;
+      clock?: { displayValue?: string };
+    }>;
   }>;
 }
 
@@ -191,6 +219,18 @@ async function fetchESPN() {
     // للمجموعات فقط نأخذ الحرف من الملاحظات
     const resolvedGroup = stage === "group" ? (groupLetter || undefined) : undefined;
 
+    const displayClock = event.status?.type?.displayClock;
+    const minute = live && displayClock ? (parseInt(displayClock) || undefined) : undefined;
+
+    const details = comp?.details ?? [];
+    const scorers = details
+      .filter(d => d.scoringPlay)
+      .map(d => ({
+        name: d.athletesInvolved?.[0]?.displayName ?? "?",
+        minute: d.clock?.displayValue ? (parseInt(d.clock.displayValue) || undefined) : undefined,
+        team: (d.homeAway === "home" ? "home" : "away") as "home" | "away",
+      }));
+
     return {
       id: event.id,
       stage,
@@ -211,6 +251,8 @@ async function fetchESPN() {
           : null,
       live,
       completed,
+      minute,
+      scorers: (completed || live) ? scorers : [],
     };
   });
 }

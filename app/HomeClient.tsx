@@ -15,6 +15,8 @@ interface ScheduleMatch extends Match {
   score?: { home: number; away: number } | null;
   live?: boolean;
   completed?: boolean;
+  minute?: number;
+  scorers?: { name: string; minute?: number; team: "home" | "away" }[];
 }
 
 function saudiNow() { return Date.now() + 3 * 60 * 60 * 1000; }
@@ -25,13 +27,20 @@ function fmtDayLabel(d: string) {
   const tomorrow = new Date(now + 86400000).toISOString().split("T")[0];
   if (d === today)    return "اليوم";
   if (d === tomorrow) return "غداً";
-  return new Date(d + "T12:00:00").toLocaleDateString("ar-SA", {
-    weekday: "long", day: "numeric", month: "long",
-  });
+  return new Intl.DateTimeFormat("ar", {
+    calendar: "gregory", weekday: "long", day: "numeric", month: "long",
+  }).format(new Date(d + "T12:00:00"));
 }
 
-function buildSectionsByDate(matches: Match[]) {
-  const byDate: Record<string, Match[]> = {};
+function fmtTime(time: string): string {
+  const [h, m] = time.split(":").map(Number);
+  const period = h >= 12 ? "م" : "ص";
+  const h12 = h % 12 || 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${period}`;
+}
+
+function buildSectionsByDate(matches: ScheduleMatch[]) {
+  const byDate: Record<string, ScheduleMatch[]> = {};
   for (const m of matches) { (byDate[m.date] ??= []).push(m); }
   return Object.entries(byDate)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -44,9 +53,9 @@ function buildSectionsByDate(matches: Match[]) {
 
 function predKey(m: Match) { return `${m.team1}|${m.team2}`; }
 
-function buildSectionsByGroup(matches: Match[]) {
-  const grp: Record<string, Match[]> = {};
-  const ko:  Record<string, Match[]> = {};
+function buildSectionsByGroup(matches: ScheduleMatch[]) {
+  const grp: Record<string, ScheduleMatch[]> = {};
+  const ko:  Record<string, ScheduleMatch[]> = {};
   for (const m of matches) {
     if (m.stage === "group") (grp[m.group!] ??= []).push(m);
     else                     (ko[m.stage]   ??= []).push(m);
@@ -86,8 +95,8 @@ function fireConfetti() {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function HomeClient() {
-  const [matches,  setMatches]  = useState<Match[]>(() => {
-    const p = lsGet<Match[]>("wc2026_schedule", []);
+  const [matches,  setMatches]  = useState<ScheduleMatch[]>(() => {
+    const p = lsGet<ScheduleMatch[]>("wc2026_schedule", []);
     return p.length ? p : ALL_MATCHES;
   });
   const [allPreds, setAllPreds] = useState<AllPredictions>(() => {
@@ -236,10 +245,13 @@ export default function HomeClient() {
       {/* ── LIVE TICKER ───────────────────────────────────── */}
       {liveMatches.length > 0 && (
         <div className="bg-red-950/70 border-b border-red-500/25 overflow-hidden">
-          <div className="ticker-track py-2">
+          <div className="ticker-track py-2" dir="ltr">
             {[...liveMatches, ...liveMatches].map((m, i) => (
               <span key={i} className="inline-flex items-center gap-3 px-8 text-sm">
                 <span className="text-red-400 animate-pulse text-[10px] font-black tracking-widest">⬤ LIVE</span>
+                {m.minute != null && (
+                  <span className="text-red-300 text-[10px] font-black bg-red-500/15 px-1.5 rounded">{m.minute}'</span>
+                )}
                 <span className="font-bold text-white/90">{m.flag1} {m.team1}</span>
                 <span className="font-black text-white text-base tabular-nums">
                   {results[predKey(m)]?.t1 ?? "–"}
@@ -247,7 +259,7 @@ export default function HomeClient() {
                   {results[predKey(m)]?.t2 ?? "–"}
                 </span>
                 <span className="font-bold text-white/90">{m.team2} {m.flag2}</span>
-                <span className="text-white/15">|</span>
+                <span className="text-white/15 mx-2">|</span>
               </span>
             ))}
           </div>
@@ -390,7 +402,7 @@ export default function HomeClient() {
 
 // ── MatchCard ─────────────────────────────────────────────────────────────────
 function MatchCard({ match, actual, allPreds, users }: {
-  match: Match; actual?: ActualResult; allPreds: AllPredictions; users: string[];
+  match: ScheduleMatch; actual?: ActualResult; allPreds: AllPredictions; users: string[];
 }) {
   const pk = predKey(match);
   const predsForMatch = users
@@ -405,18 +417,28 @@ function MatchCard({ match, actual, allPreds, users }: {
       isLive ? "border-red-500/40 live-glow" : isDone ? "border-green-500/10" : "border-white/8"
     }`}>
       <div className="p-4">
-        <div className="flex items-center justify-between mb-4 text-[11px]">
-          <span className="text-white/30">
-            {match.groupName ? `${match.groupName} • ` : ""}{match.time}
-            {match.venue ? ` • ${match.venue}` : ""}
-          </span>
-          {isLive ? (
-            <span className="badge-live animate-pulse">🔴 مباشر</span>
-          ) : isDone ? (
-            <span className="badge-done">✅ انتهت</span>
-          ) : (
-            <span className="badge-upcoming">📅 قادمة</span>
-          )}
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <div className="text-sm font-black text-white">{fmtTime(match.time)}</div>
+            <div className="text-[10px] text-white/30 mt-0.5">
+              {match.groupName ?? ""}
+              {match.venue ? ` • ${match.venue}` : ""}
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap justify-end">
+            {isLive && match.minute != null && (
+              <span className="text-[10px] font-black text-red-300 bg-red-500/10 border border-red-500/20 rounded-full px-2 py-0.5 animate-pulse">
+                ⏱ {match.minute}'
+              </span>
+            )}
+            {isLive ? (
+              <span className="badge-live animate-pulse">🔴 مباشر</span>
+            ) : isDone ? (
+              <span className="badge-done">✅ انتهت</span>
+            ) : (
+              <span className="badge-upcoming">📅 قادمة</span>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -427,12 +449,11 @@ function MatchCard({ match, actual, allPreds, users }: {
           <div className="flex-shrink-0 text-center w-24">
             {(isDone || isLive) && actual ? (
               <div className={`font-black text-3xl leading-none ${isLive ? "text-red-400" : "text-white"}`}>
-                {actual.t1}<span className="text-white/25 mx-1">:</span>{actual.t2}
+                {actual.t2}<span className="text-white/25 mx-1">:</span>{actual.t1}
               </div>
             ) : (
               <div className="text-white/20 font-black text-lg tracking-widest">VS</div>
             )}
-            <div className="text-[10px] text-white/20 mt-1.5">{match.time}</div>
           </div>
           <div className="flex-1 text-center">
             <div className="text-4xl mb-1.5">{match.flag2}</div>
@@ -440,6 +461,18 @@ function MatchCard({ match, actual, allPreds, users }: {
           </div>
         </div>
       </div>
+
+      {(isDone || isLive) && match.scorers && match.scorers.length > 0 && (
+        <div className="border-t border-white/5 px-4 py-2 flex flex-wrap gap-x-4 gap-y-0.5">
+          {match.scorers.map((s, i) => (
+            <span key={i} className="text-[11px] text-white/50 flex items-center gap-1">
+              ⚽ <span className="text-white/70">{s.team === "home" ? match.flag1 : match.flag2}</span>
+              <span className="font-bold text-white/60">{s.name}</span>
+              {s.minute != null && <span className="text-white/30">{s.minute}'</span>}
+            </span>
+          ))}
+        </div>
+      )}
 
       {predsForMatch.length > 0 && (
         <div className="border-t border-white/8 bg-black/25 px-4 py-3">
@@ -458,7 +491,7 @@ function MatchCard({ match, actual, allPreds, users }: {
                     pts?.kind === "none"   ? "chip-miss"   : "chip-pending"
                   }`}>
                   <span className="text-[10px] opacity-60">{user}</span>
-                  <span className="font-black">{pred.t1}:{pred.t2}</span>
+                  <span className="font-black">{pred.t2}:{pred.t1}</span>
                   {pts && <span>{pts.kind === "exact" ? "⭐" : pts.kind === "result" ? "✓" : "✗"}</span>}
                 </div>
               );
