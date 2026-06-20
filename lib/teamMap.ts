@@ -48,6 +48,19 @@ export const AR_TO_EN: Record<string, string[]> = {
   "سلوفاكيا": ["Slovakia"],
   "البحرين": ["Bahrain"],
   "الأردن": ["Jordan"],
+  // فرق ظهرت في ESPN لكن كانت ناقصة من القائمة
+  "التشيك": ["Czechia", "Czech Republic"],
+  "البوسنة والهرسك": ["Bosnia-Herzegovina", "Bosnia and Herzegovina", "Bosnia & Herzegovina"],
+  "تركيا": ["Türkiye", "Turkey"],
+  "الرأس الأخضر": ["Cape Verde"],
+  "الكونغو الديمقراطية": ["Congo DR", "DR Congo", "Democratic Republic of Congo"],
+  "النمسا": ["Austria"],
+  "النرويج": ["Norway"],
+  "العراق": ["Iraq"],
+  "غانا": ["Ghana"],
+  "السويد": ["Sweden"],
+  "هايتي": ["Haiti"],
+  "كوراساو": ["Curaçao", "Curacao"],
 };
 
 // Build reverse map: English → Arabic
