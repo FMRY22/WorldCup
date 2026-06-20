@@ -327,7 +327,6 @@ export const PLAYER_NAME_AR: Record<string, string> = {
   // ────────── كوريا الجنوبية ──────────
   "Hwang In-Beom": "هوانغ إن بوم",
   "Son Heung-Min": "سون هيونغ مين",
-  "Heung-Min Son": "سون هيونغ مين",
   "Hwang Hee-Chan": "هوانغ هي تشان",
   "Lee Jae-Sung": "لي جاي سونغ",
   "Jung Woo-Young": "جونغ وو يونغ",
@@ -340,7 +339,7 @@ export const PLAYER_NAME_AR: Record<string, string> = {
   "Ladislav Krejci": "لاديسلاف كريتشي",
   "Ladislav Krejcí": "لاديسلاف كريتشي",
   "Patrik Schick": "باتريك شيك",
-  "Patrik Schick": "باتريك شيك",
+  "Patrik Šilhavý": "باتريك شيلهافي",
   "Tomas Soucek": "توماس سوتشيك",
   "Tomáš Souček": "توماس سوتشيك",
   "Vladimir Coufal": "فلاديمير كوفال",
